@@ -1,0 +1,22 @@
+# Python environments and bytecode
+.venv/
+__pycache__/
+*.py[cod]
+
+# Development tool caches
+.uv-cache/
+.pytest_cache/
+.hypothesis/
+.ruff_cache/
+.mypy_cache/
+
+# Coverage output
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+
+# Build output
+build/
+dist/
+*.egg-info/
