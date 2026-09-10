@@ -1,9 +1,10 @@
 # Sudoku Gen
 
 A deterministic Sudoku generation engine intended to produce publication-quality
-puzzles. Phase 1.3 provides the immutable core domain model, its canonical text
-representation, standard 9x9 Sudoku rule checks, and local candidate calculation.
-Solving, generation, and application features have not been implemented.
+puzzles. Phase 1.4 provides the immutable core domain model, its canonical text
+representation, standard 9x9 Sudoku rule checks, local candidate calculation, and
+a deterministic solver. Generation and application features have not been
+implemented.
 
 ## Domain model
 
@@ -84,6 +85,35 @@ grid or fills cells. Call `is_valid_grid()` separately when rule validation is
 needed. Candidate sets have deterministic contents; their iteration order is
 not an API guarantee.
 
+## Solver
+
+```python
+from sudoku_gen.models import Grid
+from sudoku_gen.solver import solve
+
+grid = Grid.from_string(
+    "530070000600195000098000060800060003400803001700020006060000280000419005000080079"
+)
+solution = solve(grid)
+```
+
+`solve(grid: Grid) -> Grid | None` returns one valid completed grid while preserving
+all clues and the original input. An already solved valid grid is returned
+unchanged. Starting grids with Sudoku rule conflicts and valid-looking grids with
+no solution both return `None`. Representation errors remain the responsibility
+of `Grid` construction.
+
+The solver uses recursive backtracking with Minimum Remaining Values (MRV): it
+chooses the empty cell with the fewest candidates, breaks ties in row-major order,
+and tries digits in ascending order. An empty cell with no candidates ends the
+current branch immediately. The starting grid is validated once before search;
+each tentative placement creates a new `Grid` directly from its cells. Complete
+results are checked with `is_valid_solution()`.
+
+Repeated calls produce the same solution, including for the empty grid and other
+puzzles with multiple solutions. The solver finds one solution; it does not count
+solutions or test uniqueness.
+
 ## Development setup
 
 Install Python 3.12+ and `uv`, then run from the repository root:
@@ -122,6 +152,10 @@ and index boundaries. Seeded Hypothesis tests exercise canonical serialization
 round trips and verify that removing clues from a valid solution preserves rule
 consistency. Candidate tests cover local constraints, cell and box coordinates,
 filled and blocked cells, and properties of candidates on valid partial grids.
+Solver tests cover known puzzles, required backtracking, invalid and unsatisfiable
+states, determinism, and clue preservation. Seeded property tests solve grids with
+clues removed from a known solution, checking validity rather than assuming
+uniqueness.
 
 ## Repository layout
 
@@ -131,10 +165,12 @@ src/sudoku_gen/models.py      Immutable Grid and SudokuPuzzle domain objects
 src/sudoku_gen/exceptions.py  Typed domain errors
 src/sudoku_gen/validation.py  Cell/unit access and Sudoku rule checks
 src/sudoku_gen/candidates.py  Local immutable candidate sets
+src/sudoku_gen/solver.py      Deterministic MRV backtracking solver
 tests/test_package.py        Package import smoke test
 tests/test_models.py         Domain model tests and serialization properties
 tests/test_validation.py     Sudoku rules, coordinates, and clue-removal property
 tests/test_candidates.py     Candidate rules and cell-access behavior
+tests/test_solver.py         Solving, backtracking, and solution invariants
 pyproject.toml               Package metadata, dev dependencies, tool configuration
 uv.lock                      Resolved dependency versions
 .python-version              Local Python version
