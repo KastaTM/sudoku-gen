@@ -1,9 +1,9 @@
 # Sudoku Gen
 
 A deterministic Sudoku generation engine intended to produce publication-quality
-puzzles. Phase 1.2 provides the immutable core domain model, its canonical text
-representation, and standard 9x9 Sudoku rule checks. Solving, generation, and
-application features have not been implemented.
+puzzles. Phase 1.3 provides the immutable core domain model, its canonical text
+representation, standard 9x9 Sudoku rule checks, and local candidate calculation.
+Solving, generation, and application features have not been implemented.
 
 ## Domain model
 
@@ -51,6 +51,39 @@ booleans, raise `TypeError`. Out-of-range coordinates raise `IndexError`.
 Repeated zeroes are allowed, so an empty grid is valid and incomplete. Rule
 consistency alone does not establish solvability or solution uniqueness.
 
+## Candidates and cell access
+
+`sudoku_gen.validation` also provides:
+
+- `cell_value(grid, row, column)`: read a cell, including zero for an empty cell.
+- `box_coordinates(row, column)`: get the cell's `(box_row, box_column)` in `0..2`.
+- `empty_cells(grid)`: get an immutable tuple of empty-cell coordinates in
+  row-major order.
+
+These use the same coordinate types, ranges, and errors as unit access.
+
+```python
+from sudoku_gen.candidates import candidates
+from sudoku_gen.models import Grid
+from sudoku_gen.validation import empty_cells
+
+grid = Grid.from_string("0" * 81)
+row, column = empty_cells(grid)[0]
+assert candidates(grid, row, column) == frozenset(range(1, 10))
+```
+
+`candidates(grid, row, column)` returns a `frozenset[int]`: digits `1..9` minus
+the non-zero digits present in the current row, column, and box. Filled cells
+return an empty frozenset. An empty cell can also have no legal candidates;
+use `cell_value()` or iterate `empty_cells()` to distinguish that case.
+
+Candidate calculation uses only local unit values and does not call whole-grid
+validation. Even on a conflicting grid, it excludes currently used peer digits;
+it does not establish solvability or resolve conflicts. It never modifies the
+grid or fills cells. Call `is_valid_grid()` separately when rule validation is
+needed. Candidate sets have deterministic contents; their iteration order is
+not an API guarantee.
+
 ## Development setup
 
 Install Python 3.12+ and `uv`, then run from the repository root:
@@ -87,7 +120,8 @@ Tests cover the editable package import, grid invariants, malformed inputs,
 immutability, the puzzle wrapper, unit extraction, Sudoku conflicts, completion,
 and index boundaries. Seeded Hypothesis tests exercise canonical serialization
 round trips and verify that removing clues from a valid solution preserves rule
-consistency.
+consistency. Candidate tests cover local constraints, cell and box coordinates,
+filled and blocked cells, and properties of candidates on valid partial grids.
 
 ## Repository layout
 
@@ -95,10 +129,12 @@ consistency.
 src/sudoku_gen/__init__.py    Package scaffold
 src/sudoku_gen/models.py      Immutable Grid and SudokuPuzzle domain objects
 src/sudoku_gen/exceptions.py  Typed domain errors
-src/sudoku_gen/validation.py  Unit extraction and Sudoku rule checks
+src/sudoku_gen/validation.py  Cell/unit access and Sudoku rule checks
+src/sudoku_gen/candidates.py  Local immutable candidate sets
 tests/test_package.py        Package import smoke test
 tests/test_models.py         Domain model tests and serialization properties
 tests/test_validation.py     Sudoku rules, coordinates, and clue-removal property
+tests/test_candidates.py     Candidate rules and cell-access behavior
 pyproject.toml               Package metadata, dev dependencies, tool configuration
 uv.lock                      Resolved dependency versions
 .python-version              Local Python version

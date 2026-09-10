@@ -1,4 +1,4 @@
-"""Pure Sudoku rule checks for grids whose representation is already validated.
+"""Cell and unit access, and pure Sudoku rule checks for validated representations.
 
 Rows and columns use indices 0 through 8. Boxes use (box_row, box_column)
 coordinates, each from 0 through 2. Extracted units are immutable tuples.
@@ -18,6 +18,37 @@ def _check_index(index: int, size: int, name: str) -> None:
         raise TypeError(f"{name} must be a built-in integer; got {index!r}.")
     if not 0 <= index < size:
         raise IndexError(f"{name} must be between 0 and {size - 1}; got {index}.")
+
+
+def cell_value(grid: Grid, row: int, column: int) -> int:
+    """Read a cell using built-in integer coordinates from 0 through 8.
+
+    Raise TypeError for other types (including bool), or IndexError for an
+    out-of-range coordinate, consistently with unit access.
+    """
+    _check_index(row, _UNIT_SIZE, "row")
+    _check_index(column, _UNIT_SIZE, "column")
+    return grid.cells[row * _UNIT_SIZE + column]
+
+
+def box_coordinates(row: int, column: int) -> tuple[int, int]:
+    """Return the (box_row, box_column) containing a cell, each from 0 through 2.
+
+    Cell coordinates must be built-in integers from 0 through 8. Raise TypeError
+    for other types (including bool), or IndexError for an out-of-range value.
+    """
+    _check_index(row, _UNIT_SIZE, "row")
+    _check_index(column, _UNIT_SIZE, "column")
+    return row // _BOX_SIZE, column // _BOX_SIZE
+
+
+def empty_cells(grid: Grid) -> tuple[tuple[int, int], ...]:
+    """Return coordinates of all empty cells in deterministic row-major order."""
+    return tuple(
+        divmod(index, _UNIT_SIZE)
+        for index, value in enumerate(grid.cells)
+        if value == 0
+    )
 
 
 def row_values(grid: Grid, row: int) -> tuple[int, ...]:
