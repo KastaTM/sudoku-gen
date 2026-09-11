@@ -1,9 +1,9 @@
 # Sudoku Gen
 
 A deterministic Sudoku generation engine intended to produce publication-quality
-puzzles. Phase 1.6 adds seeded solution construction and uniquely solvable puzzle
-generation to the immutable domain model, Sudoku rule checks, candidate
-calculation, and deterministic solver. Application features have not been
+puzzles. Phase 1.7 adds recorded human-style logical solving with Naked and Hidden
+Singles to the immutable domain model, rule checks, candidates, mathematical
+solver, and seeded puzzle generation. Application features have not been
 implemented.
 
 ## Domain model
@@ -138,6 +138,73 @@ on demand. Counting stops immediately at the cap; it does not collect or enumera
 all solutions first. Each call validates the starting grid once, preserves the
 input and its clues, and uses the same deterministic search order.
 
+## Human-style logical solving
+
+`sudoku_gen.human_solver` derives explicit logical placements from the grid using
+only **Naked Singles** and **Hidden Singles**. The mathematical `solve()` uses
+backtracking to find a completion; `solve_logically()` records supported logical
+moves and may stop before completion. It uses no guessing, recursive search,
+backtracking, or associated `SudokuPuzzle.solution`.
+
+```python
+from sudoku_gen.human_solver import apply_step, next_step, solve_logically
+from sudoku_gen.models import Grid
+
+grid = Grid.from_string(
+    "530070000600195000098000060800060003400803001700020006060000280000419005000080079"
+)
+step = next_step(grid)
+if step is not None:
+    updated = apply_step(grid, step)
+result = solve_logically(grid)
+assert result.solved
+```
+
+- `next_step(grid: Grid) -> SolveStep | None` returns the first supported move,
+  or `None` if the grid is solved or no supported move exists.
+- `apply_step(grid: Grid, step: SolveStep) -> Grid` returns a new grid. It checks
+  that the target is empty, the digit is a legal candidate, and the declared
+  technique justifies it. Any justified move is accepted, even if it is not the
+  first move in detection order. These failures raise `ValueError`.
+- `solve_logically(grid: Grid) -> LogicalSolveResult` repeatedly detects and
+  applies one move, recalculating candidates after every placement. The recorded
+  steps can be replayed with `apply_step()` to reproduce the result grid exactly.
+
+`SolveStep(technique, row, column, value)` is an immutable, hashable dataclass.
+`Technique` has `NAKED_SINGLE` and `HIDDEN_SINGLE`. Coordinates are zero-based,
+built-in integers in `0..8`; invalid types raise `TypeError` and out-of-range
+indices raise `IndexError`. Values must be built-in integers in `1..9`:
+invalid types raise `TypeError` and out-of-range digits raise `ValueError`.
+Construction validates these fields; `apply_step()` validates their justification
+on the supplied grid. A Hidden Single must be unique in at least one containing
+unit, and may also qualify as a Naked Single.
+
+Detection always prefers Naked Singles, visiting empty cells in row-major order.
+A Naked Single has exactly one candidate. Hidden Singles follow in rows `0..8`,
+then columns `0..8`, then boxes in row-major order. Within each unit, missing digits
+are checked in ascending order. A Hidden Single's digit appears in exactly one
+empty cell's candidate set in that unit, even when that cell has other candidates.
+Both techniques reuse `candidates()`.
+
+`LogicalSolveResult(grid, steps, status)` is immutable and hashable; `steps` is a
+tuple in application order. Its `solved` property derives from
+`LogicalSolveStatus`:
+
+- `SOLVED`: the grid is a valid complete solution. An already solved input returns
+  zero steps.
+- `STUCK`: the grid is incomplete and neither supported technique can progress.
+  This does not establish solvability or uniqueness.
+- `CONTRADICTION`: Sudoku rule conflicts or an empty cell with no candidates were
+  detected. The result retains the current grid and all successfully applied
+  steps, including zero steps for an invalid starting grid.
+
+`next_step()` and `apply_step()` raise the existing `InvalidGridError` on these
+contradictory starting states. The logical solver reports them as `CONTRADICTION`.
+These are local checks: an unsatisfiable puzzle without a detected contradiction
+can return `STUCK`. Mathematical solvability and uniqueness remain the existing
+solver's responsibility. Difficulty labels, scores, and generation filtering are
+not implemented.
+
 ## Generation
 
 ```python
@@ -228,6 +295,11 @@ Generator tests cover seeded reproducibility, global RNG isolation, solution
 validity, uniqueness-preserving removals, target semantics, and clue/solution
 agreement. A small seeded property test checks generation invariants over bounded
 seeds and targets.
+Human-solver tests independently check row, column, and box Hidden Singles,
+Naked Singles, deterministic technique priority, checked move application,
+contradiction and stuck results, immutable data, and exact step replay. Bounded
+seeded properties check legal placements, intermediate validity, and clue
+preservation.
 
 ## Repository layout
 
@@ -238,6 +310,7 @@ src/sudoku_gen/exceptions.py  Typed domain errors
 src/sudoku_gen/validation.py  Cell/unit access and Sudoku rule checks
 src/sudoku_gen/candidates.py  Local immutable candidate sets
 src/sudoku_gen/solver.py      Solving, capped counting, and uniqueness checks
+src/sudoku_gen/human_solver.py  Recorded Naked and Hidden Single placements
 src/sudoku_gen/generator.py   Seeded solution construction and puzzle carving
 tests/test_package.py        Package import smoke test
 tests/test_models.py         Domain model tests and serialization properties
@@ -246,6 +319,8 @@ tests/test_candidates.py     Candidate rules and cell-access behavior
 tests/test_solver.py         Solving, backtracking, and solution invariants
 tests/test_solution_counting.py  Counts, uniqueness, and early termination
 tests/test_generator.py      Seeded generation and carving invariants
+tests/test_human_techniques.py  Independent single detection and priority fixtures
+tests/test_human_solver.py    Logical solving, replay, errors, and invariants
 pyproject.toml               Package metadata, dev dependencies, tool configuration
 uv.lock                      Resolved dependency versions
 .python-version              Local Python version

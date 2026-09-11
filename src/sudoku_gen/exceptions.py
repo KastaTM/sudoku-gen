@@ -1,4 +1,4 @@
-"""Exceptions raised when Sudoku domain inputs are malformed."""
+"""Exceptions raised when Sudoku domain inputs are invalid."""
 
 
 class SudokuError(Exception):
@@ -6,4 +6,4 @@ class SudokuError(Exception):
 
 
 class InvalidGridError(SudokuError, ValueError):
-    """A grid has an invalid representation, cell count, or cell value."""
+    """A grid has a malformed representation or a detected Sudoku contradiction."""
