@@ -60,10 +60,26 @@ class Grid:
 
 @dataclass(frozen=True, slots=True)
 class SudokuPuzzle:
-    """A puzzle's grid, without claims about Sudoku validity or uniqueness."""
+    """A puzzle grid and optional associated solution with matching clues.
+
+    The solution remains optional for callers that only have a puzzle grid.
+    This model checks types and clue agreement, not Sudoku rules or uniqueness.
+    Generation supplies a complete solution and guarantees unique solvability.
+    """
 
     grid: Grid
+    solution: Grid | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.grid, Grid):
             raise TypeError("SudokuPuzzle grid must be a Grid.")
+        if self.solution is not None:
+            if not isinstance(self.solution, Grid):
+                raise TypeError("SudokuPuzzle solution must be a Grid or None.")
+            for index, (clue, answer) in enumerate(
+                zip(self.grid.cells, self.solution.cells, strict=True)
+            ):
+                if clue != 0 and clue != answer:
+                    raise ValueError(
+                        f"Puzzle clue at index {index} does not match its solution."
+                    )

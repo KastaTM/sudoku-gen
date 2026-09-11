@@ -12,6 +12,9 @@ from sudoku_gen.models import Grid, SudokuPuzzle
 CANONICAL_GRID = (
     "530070000600195000098000060800060003400803001700020006060000280000419005000080079"
 )
+CANONICAL_SOLUTION = (
+    "534678912672195348198342567859761423426853791713924856961537284287419635345286179"
+)
 
 
 class IntSubclass(int):
@@ -148,12 +151,13 @@ def test_canonical_string_round_trip_through_grid(text: str) -> None:
     assert Grid.from_string(text).to_string() == text
 
 
-def test_sudoku_puzzle_contains_only_its_grid() -> None:
+def test_sudoku_puzzle_defaults_to_no_associated_solution() -> None:
     grid = Grid.from_string(CANONICAL_GRID)
     puzzle = SudokuPuzzle(grid=grid)
 
     assert puzzle.grid == grid
-    assert tuple(field.name for field in fields(puzzle)) == ("grid",)
+    assert puzzle.solution is None
+    assert tuple(field.name for field in fields(puzzle)) == ("grid", "solution")
 
 
 def test_sudoku_puzzle_is_immutable_and_hashable() -> None:
@@ -171,3 +175,67 @@ def test_sudoku_puzzle_is_immutable_and_hashable() -> None:
 def test_sudoku_puzzle_rejects_non_grid_values(grid: object) -> None:
     with pytest.raises(TypeError):
         SudokuPuzzle(grid=grid)
+
+
+def test_sudoku_puzzle_stores_matching_grid_and_solution() -> None:
+    grid = Grid.from_string(CANONICAL_GRID)
+    solution = Grid.from_string(CANONICAL_SOLUTION)
+
+    puzzle = SudokuPuzzle(grid=grid, solution=solution)
+
+    assert puzzle.grid == grid
+    assert puzzle.solution == solution
+
+
+def test_sudoku_puzzle_solution_is_immutable() -> None:
+    puzzle = SudokuPuzzle(
+        grid=Grid.from_string(CANONICAL_GRID),
+        solution=Grid.from_string(CANONICAL_SOLUTION),
+    )
+
+    with pytest.raises(FrozenInstanceError):
+        puzzle.solution = None
+
+    assert puzzle.solution == Grid.from_string(CANONICAL_SOLUTION)
+
+
+def test_sudoku_puzzle_equality_and_hash_include_associated_solution() -> None:
+    grid = Grid(cells=(0,) * 81)
+    solution = Grid.from_string(CANONICAL_SOLUTION)
+    different_solution = Grid(cells=tuple(value % 9 + 1 for value in solution.cells))
+    puzzle = SudokuPuzzle(grid=grid, solution=solution)
+    duplicate = SudokuPuzzle(
+        grid=Grid(cells=(0,) * 81),
+        solution=Grid.from_string(CANONICAL_SOLUTION),
+    )
+    alternative = SudokuPuzzle(grid=grid, solution=different_solution)
+    without_solution = SudokuPuzzle(grid=grid)
+
+    assert puzzle == duplicate
+    assert hash(puzzle) == hash(duplicate)
+    assert puzzle != alternative
+    assert puzzle != without_solution
+    assert len({puzzle, duplicate, alternative, without_solution}) == 3
+
+
+@pytest.mark.parametrize("solution", [0, False, (0,) * 81, "0" * 81, [0] * 81])
+def test_sudoku_puzzle_rejects_non_grid_solutions(solution: object) -> None:
+    with pytest.raises(TypeError):
+        SudokuPuzzle(grid=Grid(cells=(0,) * 81), solution=solution)
+
+
+@pytest.mark.parametrize("index", [0, 40, 80])
+@pytest.mark.parametrize("missing_answer", [False, True])
+def test_sudoku_puzzle_rejects_clues_inconsistent_with_solution(
+    index: int, missing_answer: bool
+) -> None:
+    solution_cells = tuple(int(value) for value in CANONICAL_SOLUTION)
+    clue = solution_cells[index]
+    grid = Grid(cells=(0,) * index + (clue,) + (0,) * (80 - index))
+    different_answer = 0 if missing_answer else clue % 9 + 1
+    inconsistent_solution = Grid(
+        cells=solution_cells[:index] + (different_answer,) + solution_cells[index + 1 :]
+    )
+
+    with pytest.raises(ValueError, match="does not match its solution"):
+        SudokuPuzzle(grid=grid, solution=inconsistent_solution)

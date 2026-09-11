@@ -51,6 +51,11 @@ def empty_cells(grid: Grid) -> tuple[tuple[int, int], ...]:
     )
 
 
+def clue_count(grid: Grid) -> int:
+    """Return the number of non-zero cells, independently of Sudoku validity."""
+    return sum(value != 0 for value in grid.cells)
+
+
 def row_values(grid: Grid, row: int) -> tuple[int, ...]:
     """Return a row left to right; row must be an integer from 0 through 8.
 

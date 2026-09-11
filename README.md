@@ -1,9 +1,9 @@
 # Sudoku Gen
 
 A deterministic Sudoku generation engine intended to produce publication-quality
-puzzles. Phase 1.4 provides the immutable core domain model, its canonical text
-representation, standard 9x9 Sudoku rule checks, local candidate calculation, and
-a deterministic solver. Generation and application features have not been
+puzzles. Phase 1.6 adds seeded solution construction and uniquely solvable puzzle
+generation to the immutable domain model, Sudoku rule checks, candidate
+calculation, and deterministic solver. Application features have not been
 implemented.
 
 ## Domain model
@@ -24,7 +24,12 @@ grids raise `sudoku_gen.exceptions.InvalidGridError`, which is both a `SudokuErr
 and a `ValueError`.
 
 Both `Grid` and `SudokuPuzzle` are immutable, hashable dataclasses.
-`SudokuPuzzle` contains only a `grid` field and requires a `Grid` instance.
+`SudokuPuzzle` contains `grid: Grid` and an optional `solution: Grid | None = None`.
+Existing `SudokuPuzzle(grid=...)` construction remains supported; generated puzzles
+always include their completed solution. Supplying a non-Grid solution raises
+`TypeError`, and disagreeing non-zero clues raise `ValueError`. Direct construction
+does not validate Sudoku rules or uniqueness; the generator guarantees these for
+its results.
 The model enforces shape and cell values; it does not check row, column, or box
 conflicts, solvability, or uniqueness. Text conversion belongs to this value
 object; it does not read or write files.
@@ -111,8 +116,69 @@ each tentative placement creates a new `Grid` directly from its cells. Complete
 results are checked with `is_valid_solution()`.
 
 Repeated calls produce the same solution, including for the empty grid and other
-puzzles with multiple solutions. The solver finds one solution; it does not count
-solutions or test uniqueness.
+puzzles with multiple solutions. `solve()` stops after the first solution.
+
+The same module also provides:
+
+- `count_solutions(grid: Grid, limit: int = 2) -> int`: count solutions up to the
+  requested cap. Invalid or unsatisfiable Sudoku grids return `0`. A result below
+  the cap is exact; a result equal to the cap means at least that many solutions
+  exist. The default cap of `2` distinguishes zero, one, and multiple solutions.
+- `has_unique_solution(grid: Grid) -> bool`: return whether exactly one solution
+  exists, stopping as soon as a second is found. This is equivalent to
+  `count_solutions(grid, limit=2) == 1`.
+
+`limit` must be a built-in integer of at least `1`. Other types, including booleans,
+raise `TypeError`; zero and negative integers raise `ValueError`. The limit is
+checked before grid validity. Counting with `limit=1` can establish that a solution
+exists, but cannot establish uniqueness.
+
+All three functions share one recursive search that yields completed solutions
+on demand. Counting stops immediately at the cap; it does not collect or enumerate
+all solutions first. Each call validates the starting grid once, preserves the
+input and its clues, and uses the same deterministic search order.
+
+## Generation
+
+```python
+from sudoku_gen.generator import generate_puzzle, generate_solution
+from sudoku_gen.validation import clue_count
+
+solution = generate_solution(seed=1234)
+puzzle = generate_puzzle(seed=1234, target_clues=30)
+assert puzzle.solution == solution
+actual_clues = clue_count(puzzle.grid)
+```
+
+- `generate_solution(seed: int | None = None) -> Grid` constructs a valid completed
+  Sudoku by randomized backtracking. It selects among equally constrained MRV
+  cells and shuffles candidate digits during construction.
+- `generate_puzzle(*, seed: int | None = None, target_clues: int = 30) -> SudokuPuzzle`
+  constructs a solution, then attempts clue removals in a shuffled order. Every
+  accepted removal must pass `has_unique_solution()`, which stops upon finding a
+  second solution. The returned clues agree with the associated solution, and
+  solving the generated puzzle recovers that solution.
+- `clue_count(grid: Grid) -> int` derives the number of non-zero cells. The count
+  is not stored as redundant model state.
+
+Each generation call uses its own `Random(seed)`. Puzzle generation uses that one
+RNG for both construction and removal ordering; it neither uses nor modifies
+Python's global random state. The same explicit seed and parameters reproduce the
+same result for the same generator version. Seeds must be built-in integers or
+`None`; other types, including booleans, raise `TypeError`. `None` allows normal
+nondeterministic seeding. Different seeds can produce different boards, but they
+are not guaranteed to be distinct.
+
+`target_clues` must be a built-in integer in `17..81`. Other types, including
+booleans, raise `TypeError`; out-of-range integers raise `ValueError`. A single
+removal pass stops at the requested count or after all positions have been tried.
+The result may contain **more clues than the target**, but never fewer. Use
+`clue_count(puzzle.grid)` to obtain the actual count. Target `81` returns a complete
+puzzle with its solution.
+
+Generated puzzles are uniquely solvable; exact clue targets and minimal puzzles
+are not guaranteed. Clue count is not a difficulty rating. Difficulty scoring and
+clue-pattern symmetry are outside this phase.
 
 ## Development setup
 
@@ -156,6 +222,12 @@ Solver tests cover known puzzles, required backtracking, invalid and unsatisfiab
 states, determinism, and clue preservation. Seeded property tests solve grids with
 clues removed from a known solution, checking validity rather than assuming
 uniqueness.
+Capped-counting tests verify a four-cell puzzle with exactly two completions,
+limit validation, and immediate stopping through guarded solution validation.
+Generator tests cover seeded reproducibility, global RNG isolation, solution
+validity, uniqueness-preserving removals, target semantics, and clue/solution
+agreement. A small seeded property test checks generation invariants over bounded
+seeds and targets.
 
 ## Repository layout
 
@@ -165,12 +237,15 @@ src/sudoku_gen/models.py      Immutable Grid and SudokuPuzzle domain objects
 src/sudoku_gen/exceptions.py  Typed domain errors
 src/sudoku_gen/validation.py  Cell/unit access and Sudoku rule checks
 src/sudoku_gen/candidates.py  Local immutable candidate sets
-src/sudoku_gen/solver.py      Deterministic MRV backtracking solver
+src/sudoku_gen/solver.py      Solving, capped counting, and uniqueness checks
+src/sudoku_gen/generator.py   Seeded solution construction and puzzle carving
 tests/test_package.py        Package import smoke test
 tests/test_models.py         Domain model tests and serialization properties
 tests/test_validation.py     Sudoku rules, coordinates, and clue-removal property
 tests/test_candidates.py     Candidate rules and cell-access behavior
 tests/test_solver.py         Solving, backtracking, and solution invariants
+tests/test_solution_counting.py  Counts, uniqueness, and early termination
+tests/test_generator.py      Seeded generation and carving invariants
 pyproject.toml               Package metadata, dev dependencies, tool configuration
 uv.lock                      Resolved dependency versions
 .python-version              Local Python version
