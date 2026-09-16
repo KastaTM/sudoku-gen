@@ -1,10 +1,10 @@
 # Sudoku Gen
 
 A deterministic Sudoku generation engine intended to produce publication-quality
-puzzles. Phase 1.7 adds recorded human-style logical solving with Naked and Hidden
-Singles to the immutable domain model, rule checks, candidates, mathematical
-solver, and seeded puzzle generation. Application features have not been
-implemented.
+puzzles. Phase 1.8 extends human-style solving with candidate eliminations from
+pairs, Pointing, and Box-Line Reduction, alongside the immutable domain model,
+rule checks, mathematical solver, and seeded puzzle generation. Application
+features have not been implemented.
 
 ## Domain model
 
@@ -140,62 +140,101 @@ input and its clues, and uses the same deterministic search order.
 
 ## Human-style logical solving
 
-`sudoku_gen.human_solver` derives explicit logical placements from the grid using
-only **Naked Singles** and **Hidden Singles**. The mathematical `solve()` uses
-backtracking to find a completion; `solve_logically()` records supported logical
-moves and may stop before completion. It uses no guessing, recursive search,
-backtracking, or associated `SudokuPuzzle.solution`.
+`sudoku_gen.human_solver` records placements and candidate eliminations. The
+mathematical `solve()` uses backtracking to find a completion;
+`solve_logically()` applies supported logical techniques and may stop before
+completion. It uses no guessing, recursive search, backtracking, or associated
+`SudokuPuzzle.solution`.
 
 ```python
-from sudoku_gen.human_solver import apply_step, next_step, solve_logically
+from sudoku_gen.human_solver import LogicalState, apply_step, solve_logically
 from sudoku_gen.models import Grid
 
 grid = Grid.from_string(
     "530070000600195000098000060800060003400803001700020006060000280000419005000080079"
 )
-step = next_step(grid)
-if step is not None:
-    updated = apply_step(grid, step)
 result = solve_logically(grid)
 assert result.solved
+
+# Replay placements and eliminations, preserving the same candidate state.
+state = LogicalState.from_grid(grid)
+for step in result.steps:
+    state = apply_step(state, step)
+assert state == result.state
 ```
 
-- `next_step(grid: Grid) -> SolveStep | None` returns the first supported move,
-  or `None` if the grid is solved or no supported move exists.
-- `apply_step(grid: Grid, step: SolveStep) -> Grid` returns a new grid. It checks
-  that the target is empty, the digit is a legal candidate, and the declared
-  technique justifies it. Any justified move is accepted, even if it is not the
-  first move in detection order. These failures raise `ValueError`.
-- `solve_logically(grid: Grid) -> LogicalSolveResult` repeatedly detects and
-  applies one move, recalculating candidates after every placement. The recorded
-  steps can be replayed with `apply_step()` to reproduce the result grid exactly.
+- `solve_logically(grid) -> LogicalSolveResult` remains the main entry point and
+  manages candidate state automatically. It also accepts a `LogicalState` to
+  resume earlier reductions.
+- `next_step(grid_or_state) -> LogicalStep | None` returns the first supported
+  move, or `None` if solved or stuck. Passing a `Grid` starts with fresh candidates;
+  pass a `LogicalState` to retain eliminations.
+- `apply_step(state, step) -> LogicalState` validates and applies either action.
+  The Phase 1.7 convenience call `apply_step(grid, placement) -> Grid` still works.
+  Applying an elimination to a bare `Grid` raises `TypeError`: a grid cannot
+  retain candidate reductions.
 
-`SolveStep(technique, row, column, value)` is an immutable, hashable dataclass.
-`Technique` has `NAKED_SINGLE` and `HIDDEN_SINGLE`. Coordinates are zero-based,
-built-in integers in `0..8`; invalid types raise `TypeError` and out-of-range
-indices raise `IndexError`. Values must be built-in integers in `1..9`:
-invalid types raise `TypeError` and out-of-range digits raise `ValueError`.
-Construction validates these fields; `apply_step()` validates their justification
-on the supplied grid. A Hidden Single must be unique in at least one containing
-unit, and may also qualify as a Naked Single.
+`LogicalState(grid, candidates)` is immutable and hashable. Its candidate data is
+an 81-entry row-major tuple of frozensets; filled cells have empty sets. Each empty
+cell's set must be a subset of `candidates(grid, row, column)`. The constructor
+checks types, shape, and this subset invariant, but cannot certify the deduction
+history of manually supplied reductions. `LogicalState.from_grid(grid)` initializes
+the state using the unchanged mathematical `candidates()` API.
 
-Detection always prefers Naked Singles, visiting empty cells in row-major order.
-A Naked Single has exactly one candidate. Hidden Singles follow in rows `0..8`,
-then columns `0..8`, then boxes in row-major order. Within each unit, missing digits
-are checked in ascending order. A Hidden Single's digit appears in exactly one
-empty cell's candidate set in that unit, even when that cell has other candidates.
-Both techniques reuse `candidates()`.
+Placements create a new grid and intersect every old candidate set with the
+candidates permitted by that grid. Previously eliminated candidates are never
+restored. Eliminations remove candidates without changing the grid. An empty set
+on an empty cell represents a contradiction, not a filled cell.
 
-`LogicalSolveResult(grid, steps, status)` is immutable and hashable; `steps` is a
-tuple in application order. Its `solved` property derives from
-`LogicalSolveStatus`:
+The immutable, hashable action records are:
+
+- `SolveStep(technique, row, column, value)`, also named `PlacementStep`, retains
+  the Phase 1.7 placement constructor and accepts the two Single techniques.
+- `CandidateElimination(row, column, value)` identifies one candidate removal.
+- `EliminationStep(technique, eliminations)` contains a nonempty tuple of unique
+  removals, canonicalized by row, column, then digit. It accepts the four new
+  elimination techniques. `LogicalStep` is the union of the two action types.
+
+Coordinates remain built-in integers in `0..8` (`TypeError` for other types,
+`IndexError` outside the range); digits must be built-in integers in `1..9`
+(`TypeError` or `ValueError`). `apply_step()` also checks that targets are empty,
+affected candidates exist, and the declared technique justifies the complete
+step. Fabricated, stale, partial, or overextended deductions raise `ValueError`.
+Any justified step may be applied explicitly, regardless of detection priority.
+
+The exact global priority is:
+
+1. **Naked Single**: one candidate in a cell, scanning cells row-major.
+2. **Hidden Single**: one possible cell for a digit in a unit.
+3. **Naked Pair**: exactly two cells with the same two candidates; remove those
+   digits from other cells in the unit. Three matching cells are not a pair.
+4. **Hidden Pair**: two digits occur in exactly the same two cells; remove other
+   candidates from those cells.
+5. **Pointing**: a box's two or three candidate positions for a digit share a
+   row or column; remove that digit from the line outside the box.
+6. **Box-Line Reduction (Claiming)**: a line's two or three candidate positions
+   for a digit share a box; remove it from that box outside the line.
+
+Hidden Singles and both pair techniques visit rows `0..8`, columns `0..8`, then
+boxes in row-major order. Within each unit they visit ascending digits or
+lexicographically ascending digit pairs. Pointing visits boxes row-major, then
+digits ascending, checking the row before the column. Claiming visits rows before
+columns, each by ascending index, then ascending digits. Elimination techniques
+report only deductions that actually remove candidates. After every step the
+solver restarts at Naked Singles, so newly enabled singles take priority.
+
+`LogicalSolveResult` exposes final `state`, derived `grid`, an immutable `steps`
+tuple in application order, and `status`. It is immutable and hashable. The old
+`LogicalSolveResult(grid, steps, status)` constructor remains available for
+placement-only logs; mixed logs require `state=final_state` to retain reductions.
+Its `solved` property derives from `LogicalSolveStatus`:
 
 - `SOLVED`: the grid is a valid complete solution. An already solved input returns
   zero steps.
-- `STUCK`: the grid is incomplete and neither supported technique can progress.
+- `STUCK`: the grid is incomplete and no supported technique can progress.
   This does not establish solvability or uniqueness.
 - `CONTRADICTION`: Sudoku rule conflicts or an empty cell with no candidates were
-  detected. The result retains the current grid and all successfully applied
+  detected. The result retains the current state and all successfully applied
   steps, including zero steps for an invalid starting grid.
 
 `next_step()` and `apply_step()` raise the existing `InvalidGridError` on these
@@ -295,11 +334,13 @@ Generator tests cover seeded reproducibility, global RNG isolation, solution
 validity, uniqueness-preserving removals, target semantics, and clue/solution
 agreement. A small seeded property test checks generation invariants over bounded
 seeds and targets.
-Human-solver tests independently check row, column, and box Hidden Singles,
-Naked Singles, deterministic technique priority, checked move application,
-contradiction and stuck results, immutable data, and exact step replay. Bounded
-seeded properties check legal placements, intermediate validity, and clue
-preservation.
+Human-solver tests independently check singles, pairs in all unit types,
+Pointing/Claiming in both directions, boundaries, false positives, no-op
+suppression, deterministic priority, and elimination-to-single cascades. Mixed
+logs replay to the exact final grid, candidate sets, and status. State validation
+tests cover immutable data and fabricated moves. Bounded seeded properties check
+clue and solution preservation, candidate subsets, and absence of candidate
+resurrection.
 
 ## Repository layout
 
@@ -310,7 +351,9 @@ src/sudoku_gen/exceptions.py  Typed domain errors
 src/sudoku_gen/validation.py  Cell/unit access and Sudoku rule checks
 src/sudoku_gen/candidates.py  Local immutable candidate sets
 src/sudoku_gen/solver.py      Solving, capped counting, and uniqueness checks
-src/sudoku_gen/human_solver.py  Recorded Naked and Hidden Single placements
+src/sudoku_gen/human_solver.py  Logical solving, checked actions, and state replay
+src/sudoku_gen/_logical_models.py  Immutable logical state and action records
+src/sudoku_gen/_logical_techniques.py  Pure single, pair, and box/line deductions
 src/sudoku_gen/generator.py   Seeded solution construction and puzzle carving
 tests/test_package.py        Package import smoke test
 tests/test_models.py         Domain model tests and serialization properties
@@ -321,6 +364,9 @@ tests/test_solution_counting.py  Counts, uniqueness, and early termination
 tests/test_generator.py      Seeded generation and carving invariants
 tests/test_human_techniques.py  Independent single detection and priority fixtures
 tests/test_human_solver.py    Logical solving, replay, errors, and invariants
+tests/test_elimination_techniques.py  Pair and box/line deduction fixtures
+tests/test_logical_state.py   Candidate-state validation and replay compatibility
+tests/test_logical_replay.py  Mixed logs and candidate-preservation properties
 pyproject.toml               Package metadata, dev dependencies, tool configuration
 uv.lock                      Resolved dependency versions
 .python-version              Local Python version

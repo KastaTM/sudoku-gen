@@ -1,204 +1,162 @@
-"""Deterministic, recorded Sudoku placements using only Naked and Hidden Singles.
+"""Deterministic logical Sudoku solving with persistent candidate eliminations.
 
-Priority is Naked Singles in row-major order, then Hidden Singles in rows,
-columns, and boxes. Units are visited in increasing index (boxes row-major),
-and digits in ascending order within a unit. Candidates are recomputed after
-each placement; no search, guessing, or stored solution is used.
+Priority: Naked Single, Hidden Single, Naked Pair, Hidden Pair, Pointing,
+Box-Line Reduction. Every step restarts this priority. No guessing or search.
 """
 
 from collections.abc import Iterator
-from dataclasses import dataclass
-from enum import Enum
+from typing import overload
 
+from sudoku_gen import _logical_techniques as techniques
+from sudoku_gen._logical_models import CandidateElimination as CandidateElimination
+from sudoku_gen._logical_models import EliminationStep as EliminationStep
+from sudoku_gen._logical_models import LogicalSolveResult as LogicalSolveResult
+from sudoku_gen._logical_models import LogicalSolveStatus as LogicalSolveStatus
+from sudoku_gen._logical_models import LogicalState as LogicalState
+from sudoku_gen._logical_models import LogicalStep as LogicalStep
+from sudoku_gen._logical_models import PlacementStep as PlacementStep
+from sudoku_gen._logical_models import SolveStep as SolveStep
+from sudoku_gen._logical_models import Technique as Technique
 from sudoku_gen.candidates import candidates
 from sudoku_gen.exceptions import InvalidGridError
 from sudoku_gen.models import Grid
-from sudoku_gen.validation import (
-    box_coordinates,
-    cell_value,
-    empty_cells,
-    is_complete,
-    is_valid_grid,
-)
-
-type _Cell = tuple[int, int]
-type _CandidateMap = dict[_Cell, frozenset[int]]
+from sudoku_gen.validation import cell_value, is_complete, is_valid_grid
 
 
-class Technique(Enum):
-    """Logical placement techniques supported by this phase."""
-
-    NAKED_SINGLE = "naked_single"
-    HIDDEN_SINGLE = "hidden_single"
-
-
-@dataclass(frozen=True, slots=True)
-class SolveStep:
-    """One placement, with zero-based coordinates and a built-in digit 1..9.
-
-    Construction checks types and ranges. Whether the placement is justified
-    on a particular grid is checked by apply_step().
-    """
-
-    technique: Technique
-    row: int
-    column: int
-    value: int
-
-    def __post_init__(self) -> None:
-        if not isinstance(self.technique, Technique):
-            raise TypeError("technique must be a Technique.")
-        box_coordinates(self.row, self.column)
-        if type(self.value) is not int:
-            raise TypeError("value must be a built-in integer.")
-        if not 1 <= self.value <= 9:
-            raise ValueError("value must be between 1 and 9.")
+def _as_state(grid: Grid | LogicalState) -> LogicalState:
+    if isinstance(grid, LogicalState):
+        return grid
+    return LogicalState.from_grid(grid)
 
 
-class LogicalSolveStatus(Enum):
-    """Why logical solving stopped; STUCK does not establish solvability."""
-
-    SOLVED = "solved"
-    STUCK = "stuck"
-    CONTRADICTION = "contradiction"
-
-
-@dataclass(frozen=True, slots=True)
-class LogicalSolveResult:
-    """Final grid, successful placements in application order, and stop status."""
-
-    grid: Grid
-    steps: tuple[SolveStep, ...]
-    status: LogicalSolveStatus
-
-    def __post_init__(self) -> None:
-        if not isinstance(self.grid, Grid):
-            raise TypeError("grid must be a Grid.")
-        if not isinstance(self.steps, tuple) or any(
-            not isinstance(step, SolveStep) for step in self.steps
-        ):
-            raise TypeError("steps must be a tuple of SolveStep instances.")
-        if not isinstance(self.status, LogicalSolveStatus):
-            raise TypeError("status must be a LogicalSolveStatus.")
-
-    @property
-    def solved(self) -> bool:
-        """Whether logical solving reached a valid completed grid."""
-        return self.status is LogicalSolveStatus.SOLVED
-
-
-def _candidate_map(grid: Grid) -> _CandidateMap:
-    """Reject evident contradictions before considering any placement."""
-    if not is_valid_grid(grid):
+def _check_consistency(state: LogicalState) -> None:
+    """Detect local contradictions before considering any logical move."""
+    if not is_valid_grid(state.grid):
         raise InvalidGridError("Grid contains conflicting Sudoku clues.")
-    options = {
-        (row, column): candidates(grid, row, column)
-        for row, column in empty_cells(grid)
-    }
-    if any(not values for values in options.values()):
-        raise InvalidGridError("An empty cell has no legal candidates.")
-    return options
+    if any(
+        value == 0 and not options
+        for value, options in zip(state.grid.cells, state.candidates, strict=True)
+    ):
+        raise InvalidGridError("An empty cell has no legal logical candidates.")
 
 
-def _naked_singles(options: _CandidateMap) -> Iterator[SolveStep]:
-    for (row, column), values in options.items():
-        if len(values) == 1:
-            yield SolveStep(Technique.NAKED_SINGLE, row, column, next(iter(values)))
+def _steps_for(state: LogicalState, technique: Technique) -> Iterator[LogicalStep]:
+    """Dispatch one technique without imposing priority on explicit replay."""
+    match technique:
+        case Technique.NAKED_SINGLE:
+            yield from techniques.naked_singles(state)
+        case Technique.HIDDEN_SINGLE:
+            yield from techniques.hidden_singles(state)
+        case Technique.NAKED_PAIR:
+            yield from techniques.naked_pairs(state)
+        case Technique.HIDDEN_PAIR:
+            yield from techniques.hidden_pairs(state)
+        case Technique.POINTING:
+            yield from techniques.pointing(state)
+        case Technique.BOX_LINE_REDUCTION:
+            yield from techniques.box_line_reductions(state)
 
 
-def _units() -> Iterator[tuple[_Cell, ...]]:
-    """Enumerate cell coordinates in row, column, then box priority order."""
-    for row in range(9):
-        yield tuple((row, column) for column in range(9))
-    for column in range(9):
-        yield tuple((row, column) for row in range(9))
-    for box_row in range(3):
-        for box_column in range(3):
-            yield tuple(
-                (box_row * 3 + row, box_column * 3 + column)
-                for row in range(3)
-                for column in range(3)
-            )
+def next_step(grid: Grid | LogicalState) -> LogicalStep | None:
+    """Return the first justified move, or None if solved or stuck.
 
+    A Grid starts with fresh rule-based candidates. Pass LogicalState to retain
+    eliminations. Raise InvalidGridError for conflicts or zero-candidate empty
+    cells, even if another move exists. This does not test full satisfiability.
 
-def _hidden_singles(options: _CandidateMap) -> Iterator[SolveStep]:
-    for unit in _units():
-        for value in range(1, 10):
-            # candidates() already excludes every digit present in the unit,
-            # so a digit occurring here must be missing from that unit.
-            positions = [
-                cell for cell in unit if cell in options and value in options[cell]
-            ]
-            if len(positions) == 1:
-                row, column = positions[0]
-                yield SolveStep(Technique.HIDDEN_SINGLE, row, column, value)
-
-
-def next_step(grid: Grid) -> SolveStep | None:
-    """Find the first justified placement, or None if solved or stuck.
-
-    Raise InvalidGridError for Sudoku rule conflicts or an empty cell with no
-    candidates, even if another cell has a single. This is a local contradiction
-    check, not a complete test of satisfiability.
+    Singles retain Phase 1.7 order. Pairs scan rows, columns, then boxes, each
+    by ascending index and digit pair. Pointing scans boxes then digits, testing
+    rows before columns. Box-Line Reduction scans rows then columns and digits.
+    All eliminations within a step are sorted by row, column, then digit.
     """
-    options = _candidate_map(grid)
-    naked = next(_naked_singles(options), None)
-    if naked is not None:
-        return naked
-    return next(_hidden_singles(options), None)
+    state = _as_state(grid)
+    _check_consistency(state)
+    for technique in Technique:
+        step = next(_steps_for(state, technique), None)
+        if step is not None:
+            return step
+    return None
 
 
-def apply_step(grid: Grid, step: SolveStep) -> Grid:
-    """Apply a locally legal placement justified by its declared technique.
+@overload
+def apply_step(grid: Grid, step: SolveStep) -> Grid: ...
 
-    Any justified step is allowed, regardless of detection priority. A Hidden
-    Single must be unique in at least one containing unit; it may also be naked.
-    Raise ValueError for an occupied target, illegal digit, or unjustified
-    technique. Invalid starting grids raise InvalidGridError as in next_step().
-    SolveStep construction validates coordinate and digit types and ranges.
+
+@overload
+def apply_step(grid: LogicalState, step: LogicalStep) -> LogicalState: ...
+
+
+def apply_step(grid: Grid | LogicalState, step: LogicalStep) -> Grid | LogicalState:
+    """Apply a complete, justified deduction, regardless of detection priority.
+
+    Grid + placement retains the Phase 1.7 Grid return type. Eliminations require
+    LogicalState; supplying a Grid raises TypeError rather than losing candidate
+    state. Invalid moves raise ValueError; contradictory starts InvalidGridError.
+
+    Placements intersect old logical candidates with new grid-based candidates,
+    preserving earlier eliminations. Eliminations change only candidate sets.
+    A justified move may reveal a contradiction: retain its resulting state and
+    let the next check (or solve_logically) report it, without losing the log.
     """
-    if not isinstance(step, SolveStep):
-        raise TypeError("step must be a SolveStep.")
-    target = cell_value(grid, step.row, step.column)
-    options = _candidate_map(grid)
-    if target != 0:
-        raise ValueError("The target cell must be empty.")
-    values = options[step.row, step.column]
-    if step.value not in values:
-        raise ValueError("The value is not a legal candidate for the target cell.")
-    if step.technique is Technique.NAKED_SINGLE:
-        justified = len(values) == 1
+    if not isinstance(step, (SolveStep, EliminationStep)):
+        raise TypeError("step must be a SolveStep or EliminationStep.")
+    if isinstance(grid, Grid) and isinstance(step, EliminationStep):
+        raise TypeError("Elimination steps require LogicalState.from_grid(grid).")
+    state = _as_state(grid)
+    _check_consistency(state)
+    if isinstance(step, SolveStep):
+        if cell_value(state.grid, step.row, step.column) != 0:
+            raise ValueError("The target cell must be empty.")
+        if step.value not in state.candidates[step.row * 9 + step.column]:
+            raise ValueError("The value is not a legal logical candidate.")
     else:
-        justified = step in _hidden_singles(options)
-    if not justified:
-        raise ValueError("The declared technique does not justify this placement.")
-    index = step.row * 9 + step.column
-    return Grid(grid.cells[:index] + (step.value,) + grid.cells[index + 1 :])
+        for removal in step.eliminations:
+            if removal.value not in state.candidates[removal.row * 9 + removal.column]:
+                raise ValueError("An eliminated candidate must exist in an empty cell.")
+    if step not in _steps_for(state, step.technique):
+        raise ValueError("The declared technique does not justify this complete step.")
+
+    if isinstance(step, SolveStep):
+        index = step.row * 9 + step.column
+        updated = Grid(
+            state.grid.cells[:index] + (step.value,) + state.grid.cells[index + 1 :]
+        )
+        options = tuple(
+            old & candidates(updated, *divmod(i, 9))
+            for i, old in enumerate(state.candidates)
+        )
+        result = LogicalState(updated, options)
+    else:
+        reduced = list(state.candidates)
+        for removal in step.eliminations:
+            index = removal.row * 9 + removal.column
+            reduced[index] = reduced[index] - {removal.value}
+        result = LogicalState(state.grid, tuple(reduced))
+    return result.grid if isinstance(grid, Grid) else result
 
 
-def solve_logically(grid: Grid) -> LogicalSolveResult:
-    """Apply singles until solved, stuck, or an evident contradiction is found.
+def solve_logically(grid: Grid | LogicalState) -> LogicalSolveResult:
+    """Apply supported logic until solved, stuck, or locally contradictory.
 
-    Conflicting clues and zero-candidate empty cells return CONTRADICTION with
-    the current grid and all successful steps. SOLVED means complete and valid.
-    STUCK means neither supported technique can progress; an unsatisfiable grid
-    without an evident contradiction can also be STUCK. No search is performed.
+    Grid is the usual entry point; LogicalState also allows resuming a reduced
+    state. The final state and mixed log support exact replay. A STUCK result
+    does not establish mathematical solvability. No search is performed.
     """
-    current = grid
-    steps: list[SolveStep] = []
+    state = _as_state(grid)
+    steps: list[LogicalStep] = []
     while True:
         try:
-            step = next_step(current)
+            step = next_step(state)
         except InvalidGridError:
-            return LogicalSolveResult(
-                current, tuple(steps), LogicalSolveStatus.CONTRADICTION
-            )
+            status = LogicalSolveStatus.CONTRADICTION
+            break
         if step is None:
             status = (
                 LogicalSolveStatus.SOLVED
-                if is_complete(current)
+                if is_complete(state.grid)
                 else LogicalSolveStatus.STUCK
             )
-            return LogicalSolveResult(current, tuple(steps), status)
-        current = apply_step(current, step)
+            break
+        state = apply_step(state, step)
         steps.append(step)
+    return LogicalSolveResult(state.grid, tuple(steps), status, state=state)

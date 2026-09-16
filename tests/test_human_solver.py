@@ -11,6 +11,7 @@ from sudoku_gen.exceptions import InvalidGridError
 from sudoku_gen.human_solver import (
     LogicalSolveResult,
     LogicalSolveStatus,
+    LogicalState,
     SolveStep,
     Technique,
     apply_step,
@@ -265,7 +266,7 @@ def test_applying_a_step_creates_a_new_grid_and_preserves_other_cells() -> None:
     assert is_valid_grid(result)
 
 
-@pytest.mark.parametrize("technique", list(Technique))
+@pytest.mark.parametrize("technique", [Technique.NAKED_SINGLE, Technique.HIDDEN_SINGLE])
 def test_apply_accepts_a_justified_step_even_when_another_move_has_priority(
     technique: Technique,
 ) -> None:
@@ -283,7 +284,7 @@ def test_apply_rejects_an_occupied_target_even_when_the_digit_matches() -> None:
         )
 
 
-@pytest.mark.parametrize("technique", list(Technique))
+@pytest.mark.parametrize("technique", [Technique.NAKED_SINGLE, Technique.HIDDEN_SINGLE])
 def test_apply_rejects_a_digit_that_is_not_a_legal_candidate(
     technique: Technique,
 ) -> None:
@@ -291,7 +292,7 @@ def test_apply_rejects_a_digit_that_is_not_a_legal_candidate(
         apply_step(without_clues(0), SolveStep(technique, 0, 0, 3))
 
 
-@pytest.mark.parametrize("technique", list(Technique))
+@pytest.mark.parametrize("technique", [Technique.NAKED_SINGLE, Technique.HIDDEN_SINGLE])
 def test_apply_rejects_legal_candidates_without_the_declared_logical_justification(
     technique: Technique,
 ) -> None:
@@ -402,20 +403,27 @@ def test_logical_moves_preserve_candidates_clues_and_validity(
     solved = Grid.from_string(SOLVED_TEXT)
     original = without_clues(*removed)
     result = solve_logically(original)
-    current = original
+    current = LogicalState.from_grid(original)
 
     assert result.status is not LogicalSolveStatus.CONTRADICTION
     for step in result.steps:
-        assert current.cells[step.row * 9 + step.column] == 0
-        assert step.value in candidates(current, step.row, step.column)
+        if isinstance(step, SolveStep):
+            assert current.grid.cells[step.row * 9 + step.column] == 0
+            assert step.value in candidates(current.grid, step.row, step.column)
+        else:
+            assert all(
+                item.value in current.candidates[item.row * 9 + item.column]
+                for item in step.eliminations
+            )
         current = apply_step(current, step)
-        assert is_valid_grid(current)
+        assert is_valid_grid(current.grid)
         assert all(
             clue == 0 or clue == value
-            for clue, value in zip(original.cells, current.cells, strict=True)
+            for clue, value in zip(original.cells, current.grid.cells, strict=True)
         )
 
-    assert current == result.grid
+    assert current == result.state
+    assert current.grid == result.grid
     assert all(
         value == 0 or value == answer
         for value, answer in zip(result.grid.cells, solved.cells, strict=True)
