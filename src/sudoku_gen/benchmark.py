@@ -5,7 +5,12 @@ from time import perf_counter
 
 from sudoku_gen.difficulty import Difficulty
 from sudoku_gen.fingerprint import FingerprintMode
-from sudoku_gen.generator import PuzzleBatch, generate_puzzle_batch
+from sudoku_gen.generator import (
+    DifficultyGenerationStrategy,
+    GenerationWork,
+    PuzzleBatch,
+    generate_puzzle_batch,
+)
 from sudoku_gen.pattern import Symmetry
 from sudoku_gen.quality import BatchQualityReport, analyze_batch
 
@@ -21,6 +26,8 @@ class BenchmarkConfig:
     symmetry: Symmetry = Symmetry.NONE
     deduplication_mode: FingerprintMode = FingerprintMode.DIGIT_NORMALIZED
     max_attempts: int = 100
+    strategy: DifficultyGenerationStrategy = DifficultyGenerationStrategy.RANDOM_RETRY
+    guided_width: int = 4
 
 
 @dataclass(frozen=True, slots=True)
@@ -34,6 +41,7 @@ class BenchmarkResult:
     accepted_puzzles_per_second: float
     candidate_attempts_per_second: float
     quality_report: BatchQualityReport
+    work: GenerationWork | None
 
 
 def benchmark_batch(config: BenchmarkConfig) -> BenchmarkResult:
@@ -49,6 +57,8 @@ def benchmark_batch(config: BenchmarkConfig) -> BenchmarkResult:
         symmetry=config.symmetry,
         deduplication_mode=config.deduplication_mode,
         max_attempts=config.max_attempts,
+        strategy=config.strategy,
+        guided_width=config.guided_width,
     )
     elapsed_seconds = perf_counter() - started
     return _benchmark_result(batch, elapsed_seconds)
@@ -101,6 +111,7 @@ def _benchmark_result(batch: PuzzleBatch, elapsed_seconds: float) -> BenchmarkRe
         accepted_puzzles_per_second=accepted_per_second,
         candidate_attempts_per_second=attempts_per_second,
         quality_report=analyze_batch(batch),
+        work=batch.work,
     )
 
 

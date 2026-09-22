@@ -1,6 +1,7 @@
 """Seeded construction, carving, and bounded difficulty-targeted generation."""
 
 from dataclasses import dataclass
+from enum import Enum
 from random import Random
 
 from sudoku_gen.candidates import candidates
@@ -16,10 +17,61 @@ from sudoku_gen.fingerprint import (
     deduplicate_puzzles,
     fingerprint_puzzle,
 )
+from sudoku_gen.human_solver import Technique
 from sudoku_gen.models import Grid, SudokuPuzzle
 from sudoku_gen.pattern import Symmetry
 from sudoku_gen.solver import has_unique_solution
 from sudoku_gen.validation import empty_cells, is_valid_solution
+
+
+class DifficultyGenerationStrategy(Enum):
+    """How difficulty-targeted candidates are carved.
+
+    RANDOM_RETRY preserves the historical endpoint-only generation path.
+    GUIDED_CARVING uses bounded logical feedback while carving one solution.
+    """
+
+    RANDOM_RETRY = "random_retry"
+    GUIDED_CARVING = "guided_carving"
+
+
+@dataclass(frozen=True, slots=True)
+class GenerationWork:
+    """Immutable bounded work counters, separate from candidate attempts."""
+
+    outer_attempts: int = 0
+    tentative_removal_evaluations: int = 0
+    uniqueness_checks: int = 0
+    difficulty_rating_evaluations: int = 0
+    committed_removals: int = 0
+    exact_difficulty_states: int = 0
+
+    def __post_init__(self) -> None:
+        for name, value in (
+            ("outer_attempts", self.outer_attempts),
+            ("tentative_removal_evaluations", self.tentative_removal_evaluations),
+            ("uniqueness_checks", self.uniqueness_checks),
+            ("difficulty_rating_evaluations", self.difficulty_rating_evaluations),
+            ("committed_removals", self.committed_removals),
+            ("exact_difficulty_states", self.exact_difficulty_states),
+        ):
+            if type(value) is not int:
+                raise TypeError(f"{name} must be a built-in integer.")
+            if value < 0:
+                raise ValueError(f"{name} must not be negative.")
+
+    def combined_with(self, other: "GenerationWork") -> "GenerationWork":
+        """Return component-wise work totals without mutating either input."""
+        if not isinstance(other, GenerationWork):
+            raise TypeError("other must be a GenerationWork.")
+        return GenerationWork(
+            self.outer_attempts + other.outer_attempts,
+            self.tentative_removal_evaluations + other.tentative_removal_evaluations,
+            self.uniqueness_checks + other.uniqueness_checks,
+            self.difficulty_rating_evaluations + other.difficulty_rating_evaluations,
+            self.committed_removals + other.committed_removals,
+            self.exact_difficulty_states + other.exact_difficulty_states,
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -29,6 +81,7 @@ class DifficultyGeneratedPuzzle:
     puzzle: SudokuPuzzle
     difficulty_report: DifficultyReport
     attempts: int
+    work: GenerationWork | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.puzzle, SudokuPuzzle):
@@ -39,6 +92,8 @@ class DifficultyGeneratedPuzzle:
             raise TypeError("attempts must be a built-in integer.")
         if self.attempts < 1:
             raise ValueError("attempts must be at least 1.")
+        if self.work is not None and not isinstance(self.work, GenerationWork):
+            raise TypeError("work must be a GenerationWork or None.")
 
 
 @dataclass(frozen=True, slots=True)
@@ -68,6 +123,7 @@ class PuzzleBatch:
     attempts: int
     difficulty_rejections: int
     duplicate_rejections: int
+    work: GenerationWork | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.items, tuple):
@@ -108,6 +164,11 @@ class PuzzleBatch:
             )
         ) != len(self.items):
             raise ValueError("Batch items must have unique canonical identities.")
+        if self.work is not None:
+            if not isinstance(self.work, GenerationWork):
+                raise TypeError("work must be a GenerationWork or None.")
+            if self.work.outer_attempts != self.attempts:
+                raise ValueError("work outer_attempts must equal batch attempts.")
 
     @property
     def accepted_count(self) -> int:
@@ -187,26 +248,36 @@ def generate_puzzle_for_difficulty(
     target_clues: int = 30,
     max_attempts: int = 100,
     symmetry: Symmetry = Symmetry.NONE,
+    strategy: DifficultyGenerationStrategy = DifficultyGenerationStrategy.RANDOM_RETRY,
+    guided_width: int = 4,
 ) -> DifficultyGeneratedPuzzle:
     """Return a uniquely solvable puzzle with an exactly matching rating.
 
-    Each attempt uses a distinct seed derived from one local Random(seed), then
-    delegates carving to generate_puzzle() and rates that one candidate once.
-    The same explicit arguments therefore traverse the same candidate sequence.
-    UNRATED candidates simply do not match. No fallback, guessing, or unbounded
-    retry is used; DifficultyGenerationError reports a fully exhausted bound.
+    RANDOM_RETRY preserves the historical endpoint-only path. GUIDED_CARVING
+    evaluates a bounded local pool of unique clue removals while carving one
+    solution per outer attempt. Both accept only an exact final rating.
     """
     _validate_requested_difficulty(difficulty)
     _validate_max_attempts(max_attempts)
     _validate_symmetry(symmetry)
+    _validate_strategy(strategy)
+    _validate_guided_width(guided_width)
 
     rng = _local_rng(seed)
+    total_work = GenerationWork()
     for attempt in range(1, max_attempts + 1):
-        puzzle, report = _generate_and_rate_candidate(
-            rng, attempt, target_clues, symmetry
+        puzzle, report, work = _generate_and_rate_candidate(
+            rng,
+            attempt,
+            target_clues,
+            symmetry,
+            difficulty,
+            strategy,
+            guided_width,
         )
+        total_work = total_work.combined_with(work)
         if report.difficulty is difficulty:
-            return DifficultyGeneratedPuzzle(puzzle, report, attempt)
+            return DifficultyGeneratedPuzzle(puzzle, report, attempt, total_work)
     raise DifficultyGenerationError(
         f"Could not generate a {difficulty.value} puzzle after {max_attempts} attempts."
     )
@@ -221,6 +292,8 @@ def generate_puzzle_batch(
     symmetry: Symmetry = Symmetry.NONE,
     deduplication_mode: FingerprintMode = FingerprintMode.DIGIT_NORMALIZED,
     max_attempts: int = 100,
+    strategy: DifficultyGenerationStrategy = DifficultyGenerationStrategy.RANDOM_RETRY,
+    guided_width: int = 4,
 ) -> PuzzleBatch:
     """Collect a bounded number of unique puzzles with one exact difficulty.
 
@@ -237,15 +310,25 @@ def generate_puzzle_batch(
     _validate_target_clues(target_clues)
     _validate_symmetry(symmetry)
     _validate_fingerprint_mode(deduplication_mode)
+    _validate_strategy(strategy)
+    _validate_guided_width(guided_width)
 
     rng = _local_rng(seed)
     items: list[PuzzleBatchItem] = []
     difficulty_rejections = 0
     duplicate_rejections = 0
+    total_work = GenerationWork()
     for attempt in range(1, max_attempts + 1):
-        puzzle, report = _generate_and_rate_candidate(
-            rng, attempt, target_clues, symmetry
+        puzzle, report, work = _generate_and_rate_candidate(
+            rng,
+            attempt,
+            target_clues,
+            symmetry,
+            difficulty,
+            strategy,
+            guided_width,
         )
+        total_work = total_work.combined_with(work)
         if report.difficulty is not difficulty:
             difficulty_rejections += 1
             continue
@@ -265,6 +348,7 @@ def generate_puzzle_batch(
                 attempts=attempt,
                 difficulty_rejections=difficulty_rejections,
                 duplicate_rejections=duplicate_rejections,
+                work=total_work,
             )
     raise PuzzleBatchGenerationError(
         "Could not generate the requested puzzle batch: "
@@ -285,13 +369,28 @@ def _generate_and_rate_candidate(
     attempt: int,
     target_clues: int,
     symmetry: Symmetry,
-) -> tuple[SudokuPuzzle, DifficultyReport]:
-    puzzle = generate_puzzle(
-        seed=_candidate_seed(rng, attempt),
-        target_clues=target_clues,
-        symmetry=symmetry,
+    difficulty: Difficulty,
+    strategy: DifficultyGenerationStrategy,
+    guided_width: int,
+) -> tuple[SudokuPuzzle, DifficultyReport, GenerationWork]:
+    candidate_seed = _candidate_seed(rng, attempt)
+    if strategy is DifficultyGenerationStrategy.RANDOM_RETRY:
+        puzzle = generate_puzzle(
+            seed=candidate_seed, target_clues=target_clues, symmetry=symmetry
+        )
+        report = rate_difficulty(puzzle.grid)
+        return (
+            puzzle,
+            report,
+            GenerationWork(
+                outer_attempts=1,
+                difficulty_rating_evaluations=1,
+                exact_difficulty_states=int(report.difficulty is difficulty),
+            ),
+        )
+    return _guided_candidate(
+        candidate_seed, target_clues, symmetry, difficulty, guided_width
     )
-    return puzzle, rate_difficulty(puzzle.grid)
 
 
 def _candidate_seed(rng: Random, attempt: int) -> int:
@@ -299,6 +398,163 @@ def _candidate_seed(rng: Random, attempt: int) -> int:
     random_component = rng.getrandbits(128)
     paired_sum = random_component + attempt
     return paired_sum * (paired_sum + 1) // 2 + attempt
+
+
+def _guided_candidate(
+    seed: int,
+    target_clues: int,
+    symmetry: Symmetry,
+    requested: Difficulty,
+    guided_width: int,
+) -> tuple[SudokuPuzzle, DifficultyReport, GenerationWork]:
+    """Carve one solution through bounded, target-aware logical feedback.
+
+    Every iteration samples at most ``guided_width`` remaining clue groups from
+    a local seeded RNG. It rates only unique tentative grids, commits the best
+    deterministic guidance key, and never revisits a committed group. Exact
+    ratings are retained along the trajectory by lowest clue count.
+    """
+    rng = _local_rng(seed)
+    solution = _generate_solution(rng)
+    current = solution
+    current_report = rate_difficulty(current)
+    remaining = 81
+    groups = _removal_groups(symmetry)
+    rng.shuffle(groups)
+    available = groups.copy()
+    tentative_evaluations = 0
+    uniqueness_checks = 0
+    rating_evaluations = 1
+    committed_removals = 0
+    exact_states = int(current_report.difficulty is requested)
+    best_match: tuple[Grid, DifficultyReport, int] | None = (
+        (current, current_report, remaining)
+        if current_report.difficulty is requested
+        else None
+    )
+
+    while available:
+        eligible = [
+            group for group in available if remaining - len(group) >= target_clues
+        ]
+        if not eligible:
+            break
+        pool = rng.sample(eligible, min(guided_width, len(eligible)))
+        best: (
+            tuple[
+                tuple[int, int, int, int, int], tuple[int, ...], Grid, DifficultyReport
+            ]
+            | None
+        ) = None
+        permanently_rejected: list[tuple[int, ...]] = []
+        for group in pool:
+            tentative_evaluations += 1
+            tentative = _remove_group(current, group)
+            uniqueness_checks += 1
+            if not has_unique_solution(tentative):
+                permanently_rejected.append(group)
+                continue
+            report = rate_difficulty(tentative)
+            rating_evaluations += 1
+            if report.difficulty is requested:
+                exact_states += 1
+                clues = remaining - len(group)
+                if best_match is None or clues < best_match[2]:
+                    best_match = tentative, report, clues
+            candidate = (_guidance_key(requested, report), group, tentative, report)
+            if best is None or candidate[:2] < best[:2]:
+                best = candidate
+        if permanently_rejected:
+            rejected = set(permanently_rejected)
+            available = [group for group in available if group not in rejected]
+        if best is None:
+            continue
+        _, chosen_group, current, current_report = best
+        available.remove(chosen_group)
+        remaining -= len(chosen_group)
+        committed_removals += len(chosen_group)
+
+    if best_match is not None:
+        grid, report, _ = best_match
+    else:
+        grid, report = current, current_report
+    work = GenerationWork(
+        outer_attempts=1,
+        tentative_removal_evaluations=tentative_evaluations,
+        uniqueness_checks=uniqueness_checks,
+        difficulty_rating_evaluations=rating_evaluations,
+        committed_removals=committed_removals,
+        exact_difficulty_states=exact_states,
+    )
+    return SudokuPuzzle(grid, solution), report, work
+
+
+def _remove_group(grid: Grid, group: tuple[int, ...]) -> Grid:
+    cells = list(grid.cells)
+    for index in group:
+        cells[index] = 0
+    return Grid(tuple(cells))
+
+
+def _removal_groups(symmetry: Symmetry) -> list[tuple[int, ...]]:
+    if symmetry is Symmetry.NONE:
+        return [(index,) for index in range(81)]
+    return _rotational_orbits()
+
+
+def _guidance_key(
+    requested: Difficulty, report: DifficultyReport
+) -> tuple[int, int, int, int, int]:
+    """Rank one unique tentative state for a requested difficulty.
+
+    Exact solved matches lead. Medium and Hard prefer solved lower bands before
+    overshooting; Expert prefers solved advanced traces, then lower solved
+    bands. UNRATED always ranks last, where its partial metrics only break ties.
+    Within a tier, more recorded logical work is preferred to encourage carving
+    complexity without using clue count as the primary signal.
+    """
+    if report.difficulty is Difficulty.UNRATED:
+        tier = 4
+    else:
+        tiers = {
+            Difficulty.EASY: {
+                Difficulty.EASY: 0,
+                Difficulty.MEDIUM: 1,
+                Difficulty.HARD: 2,
+                Difficulty.EXPERT: 3,
+            },
+            Difficulty.MEDIUM: {
+                Difficulty.MEDIUM: 0,
+                Difficulty.EASY: 1,
+                Difficulty.HARD: 2,
+                Difficulty.EXPERT: 3,
+            },
+            Difficulty.HARD: {
+                Difficulty.HARD: 0,
+                Difficulty.MEDIUM: 1,
+                Difficulty.EASY: 2,
+                Difficulty.EXPERT: 3,
+            },
+            Difficulty.EXPERT: {
+                Difficulty.EXPERT: 0,
+                Difficulty.HARD: 1,
+                Difficulty.MEDIUM: 2,
+                Difficulty.EASY: 3,
+            },
+        }
+        tier = tiers[requested][report.difficulty]
+    hardest_rank = (
+        list(Technique).index(report.hardest_technique) + 1
+        if report.hardest_technique is not None
+        else 0
+    )
+    return (
+        tier,
+        -hardest_rank,
+        -report.score,
+        -report.candidate_elimination_count,
+        -report.step_count,
+    )
 
 
 def _validate_count(count: int) -> None:
@@ -337,6 +593,18 @@ def _validate_fingerprint_mode(mode: FingerprintMode) -> None:
 def _validate_symmetry(symmetry: Symmetry) -> None:
     if not isinstance(symmetry, Symmetry):
         raise TypeError("symmetry must be a Symmetry.")
+
+
+def _validate_strategy(strategy: DifficultyGenerationStrategy) -> None:
+    if not isinstance(strategy, DifficultyGenerationStrategy):
+        raise TypeError("strategy must be a DifficultyGenerationStrategy.")
+
+
+def _validate_guided_width(guided_width: int) -> None:
+    if type(guided_width) is not int:
+        raise TypeError("guided_width must be a built-in integer.")
+    if guided_width < 1:
+        raise ValueError("guided_width must be at least 1.")
 
 
 def _rotational_orbits() -> list[tuple[int, ...]]:
