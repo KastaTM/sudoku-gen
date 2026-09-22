@@ -11,3 +11,7 @@ class InvalidGridError(SudokuError, ValueError):
 
 class DifficultyGenerationError(SudokuError):
     """Bounded generation could not find a puzzle at the requested difficulty."""
+
+
+class PuzzleBatchGenerationError(SudokuError):
+    """A bounded puzzle batch could not collect all requested unique puzzles."""

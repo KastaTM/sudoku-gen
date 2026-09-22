@@ -1,10 +1,10 @@
 # Sudoku Gen
 
 A deterministic Sudoku generation engine intended to produce publication-quality
-puzzles. Phase 1.12 adds stable clue-grid fingerprints and explicit deduplication
-utilities alongside rotational clue-pattern symmetry, deterministic difficulty, rule
-checks, mathematical solving, and seeded puzzle generation. Application features
-have not been implemented.
+puzzles. Phase 1.13 adds deterministic bounded batch generation for one requested
+difficulty, alongside stable clue-grid fingerprints, rotational clue-pattern
+symmetry, rule checks, mathematical solving, and seeded puzzle generation.
+Application features have not been implemented.
 
 ## Domain model
 
@@ -315,6 +315,49 @@ exists. They are not calibrated to commercial publishers or universal human
 difficulty; future calibration may adjust weights and thresholds. Reports are
 derived on demand and are not stored in `SudokuPuzzle`.
 
+## Bounded batch generation
+
+```python
+from sudoku_gen.difficulty import Difficulty
+from sudoku_gen.generator import generate_puzzle_batch
+
+batch = generate_puzzle_batch(
+    10,
+    Difficulty.MEDIUM,
+    seed=2027,
+    target_clues=30,
+    max_attempts=1_000,
+)
+```
+
+`generate_puzzle_batch(count, difficulty, *, seed=None, target_clues=30,
+symmetry=Symmetry.NONE, deduplication_mode=FingerprintMode.DIGIT_NORMALIZED,
+max_attempts=100) -> PuzzleBatch` collects exactly `count` uniquely identified
+puzzles at one normal requested difficulty. It returns immutable `PuzzleBatchItem`
+records containing each puzzle, its `DifficultyReport`, and its `GridFingerprint`.
+The batch also records `attempts`, `difficulty_rejections`, and
+`duplicate_rejections`; their sum with the accepted count is always `attempts`.
+
+`max_attempts` is a global candidate bound for the whole batch, not a retry bound
+for each accepted puzzle. Candidate generation stops as soon as the requested count
+is accepted. If the bound is exhausted, `PuzzleBatchGenerationError` reports the
+requested and accepted counts, difficulty, attempts, and duplicate rejections; no
+partial batch or closest-difficulty result is returned. `count` and `max_attempts`
+must be built-in positive integers, and `max_attempts` must be at least `count`.
+
+One local `Random(seed)` provides a deterministic, distinct seed for every
+candidate attempt. Identical parameters reproduce the accepted order or the same
+bounded failure. Candidates are generated and rated once each. A nonmatching or
+`UNRATED` candidate increments `difficulty_rejections`; only exact matches are
+fingerprinted, and an already accepted canonical identity increments
+`duplicate_rejections`.
+
+The default `DIGIT_NORMALIZED` mode rejects global digit relabelings. Callers may
+choose `EXACT`, or explicitly choose the more aggressive `CLUE_PATTERN` mode,
+which treats different-valued puzzles with the same clue layout as duplicates.
+Batch generation has no persistence or cross-run duplicate store, and it runs
+sequentially without concurrency.
+
 ## Grid fingerprints and deduplication
 
 ```python
@@ -556,7 +599,7 @@ src/sudoku_gen/_logical_techniques.py  Pure single, pair, and box/line deduction
 src/sudoku_gen/difficulty.py  Explicit trace-based difficulty policy and reports
 src/sudoku_gen/pattern.py     Clue-position symmetry and descriptive pattern reports
 src/sudoku_gen/fingerprint.py Stable clue-grid identities and deduplication
-src/sudoku_gen/generator.py   Seeded generation, carving, and bounded rating targeting
+src/sudoku_gen/generator.py   Seeded generation, carving, and bounded targeting/batches
 tests/test_package.py        Package import smoke test
 tests/test_models.py         Domain model tests and serialization properties
 tests/test_validation.py     Sudoku rules, coordinates, and clue-removal property
@@ -574,6 +617,7 @@ tests/test_difficulty_puzzles.py  Real puzzle ratings and conservative status ha
 tests/test_difficulty_generation.py  Bounded exact-difficulty generation
 tests/test_pattern.py        Symmetry, pattern reports, and symmetric carving
 tests/test_fingerprint.py    Fingerprint modes and order-preserving deduplication
+tests/test_batch_generation.py  Bounded difficulty batch orchestration
 pyproject.toml               Package metadata, dev dependencies, tool configuration
 uv.lock                      Resolved dependency versions
 .python-version              Local Python version
