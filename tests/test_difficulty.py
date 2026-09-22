@@ -40,6 +40,9 @@ SEVERITY = {
     Technique.HIDDEN_PAIR: 4,
     Technique.POINTING: 5,
     Technique.BOX_LINE_REDUCTION: 6,
+    Technique.NAKED_TRIPLE: 7,
+    Technique.HIDDEN_TRIPLE: 8,
+    Technique.X_WING: 9,
 }
 SINGLE_TECHNIQUES = (Technique.NAKED_SINGLE, Technique.HIDDEN_SINGLE)
 ELIMINATION_TECHNIQUES = (
@@ -47,6 +50,9 @@ ELIMINATION_TECHNIQUES = (
     Technique.HIDDEN_PAIR,
     Technique.POINTING,
     Technique.BOX_LINE_REDUCTION,
+    Technique.NAKED_TRIPLE,
+    Technique.HIDDEN_TRIPLE,
+    Technique.X_WING,
 )
 
 
@@ -97,6 +103,9 @@ def test_solved_zero_step_result_has_zero_effort_and_no_hardest_technique() -> N
         (Technique.HIDDEN_PAIR, 8, Difficulty.HARD, 0, 1, 3),
         (Technique.POINTING, 9, Difficulty.HARD, 0, 1, 3),
         (Technique.BOX_LINE_REDUCTION, 10, Difficulty.EXPERT, 0, 1, 3),
+        (Technique.NAKED_TRIPLE, 11, Difficulty.EXPERT, 0, 1, 3),
+        (Technique.HIDDEN_TRIPLE, 12, Difficulty.EXPERT, 0, 1, 3),
+        (Technique.X_WING, 13, Difficulty.EXPERT, 0, 1, 3),
     ],
 )
 def test_each_technique_has_an_explicit_weight_and_classification(

@@ -177,3 +177,106 @@ def box_line_reductions(state: LogicalState) -> Iterator[EliminationStep]:
             eliminations = _removals(state, targets, frozenset((value,)))
             if eliminations:
                 yield EliminationStep(Technique.BOX_LINE_REDUCTION, eliminations)
+
+
+def naked_triples(state: LogicalState) -> Iterator[EliminationStep]:
+    """Remove a three-digit triple from other cells in one unit.
+
+    Units are rows, columns, then boxes. Candidate cell combinations are
+    row-major. Exactly three cells in the whole unit must be non-empty subsets
+    of the triple digits, preventing a four-cell subset false positive.
+    """
+    for unit in _units():
+        for cells in combinations(unit, 3):
+            values = frozenset().union(*(_options(state, cell) for cell in cells))
+            if len(values) != 3 or any(
+                not _options(state, cell) or not _options(state, cell) <= values
+                for cell in cells
+            ):
+                continue
+            confined_cells = tuple(
+                cell
+                for cell in unit
+                if _options(state, cell) and _options(state, cell) <= values
+            )
+            if confined_cells != cells:
+                continue
+            targets = tuple(cell for cell in unit if cell not in cells)
+            eliminations = _removals(state, targets, values)
+            if eliminations:
+                yield EliminationStep(Technique.NAKED_TRIPLE, eliminations)
+
+
+def hidden_triples(state: LogicalState) -> Iterator[EliminationStep]:
+    """Restrict three cells when three digits occur only within those cells.
+
+    Units are rows, columns, then boxes. Digits and their three-cell union are
+    considered in ascending combination order. Every selected digit must occur
+    at least once, and no selected digit may appear outside the selected cells.
+    """
+    for unit in _units():
+        positions = {value: _positions(state, unit, value) for value in range(1, 10)}
+        for digits in combinations(range(1, 10), 3):
+            cells = tuple(
+                cell
+                for cell in unit
+                if any(cell in positions[value] for value in digits)
+            )
+            if len(cells) != 3 or any(not positions[value] for value in digits):
+                continue
+            values = frozenset(digits)
+            eliminations = tuple(
+                CandidateElimination(row, column, value)
+                for row, column in cells
+                for value in sorted(_options(state, (row, column)) - values)
+            )
+            if eliminations:
+                yield EliminationStep(Technique.HIDDEN_TRIPLE, eliminations)
+
+
+def x_wings(state: LogicalState) -> Iterator[EliminationStep]:
+    """Find canonical row-based then column-based two-by-two X-Wings.
+
+    Digits scan ascending. For each orientation, source-line combinations scan
+    ascending, and eliminations are emitted in canonical coordinate order.
+    """
+    for value in range(1, 10):
+        row_positions = {
+            row: tuple(
+                column for column in range(9) if value in _options(state, (row, column))
+            )
+            for row in range(9)
+        }
+        for first_row, second_row in combinations(range(9), 2):
+            columns = row_positions[first_row]
+            if len(columns) != 2 or columns != row_positions[second_row]:
+                continue
+            targets = tuple(
+                (row, column)
+                for row in range(9)
+                if row not in (first_row, second_row)
+                for column in columns
+            )
+            eliminations = _removals(state, targets, frozenset((value,)))
+            if eliminations:
+                yield EliminationStep(Technique.X_WING, eliminations)
+    for value in range(1, 10):
+        column_positions = {
+            column: tuple(
+                row for row in range(9) if value in _options(state, (row, column))
+            )
+            for column in range(9)
+        }
+        for first_column, second_column in combinations(range(9), 2):
+            rows = column_positions[first_column]
+            if len(rows) != 2 or rows != column_positions[second_column]:
+                continue
+            targets = tuple(
+                (row, column)
+                for row in rows
+                for column in range(9)
+                if column not in (first_column, second_column)
+            )
+            eliminations = _removals(state, targets, frozenset((value,)))
+            if eliminations:
+                yield EliminationStep(Technique.X_WING, eliminations)

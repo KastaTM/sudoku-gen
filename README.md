@@ -1,9 +1,9 @@
 # Sudoku Gen
 
 A deterministic Sudoku generation engine intended to produce publication-quality
-puzzles. Phase 1.14 adds deterministic batch QA statistics, invariant audits, and
-lightweight benchmark timing alongside bounded batch generation, stable
-fingerprints, rotational clue-pattern symmetry, rule checks, mathematical solving,
+puzzles. Phase 1.15 adds Naked Triple, Hidden Triple, and X-Wing deductions to
+the persistent human logical solver, alongside deterministic batch QA statistics,
+bounded batch generation, stable fingerprints, rule checks, mathematical solving,
 and seeded puzzle generation. Application features have not been implemented.
 
 ## Domain model
@@ -192,8 +192,8 @@ The immutable, hashable action records are:
   the Phase 1.7 placement constructor and accepts the two Single techniques.
 - `CandidateElimination(row, column, value)` identifies one candidate removal.
 - `EliminationStep(technique, eliminations)` contains a nonempty tuple of unique
-  removals, canonicalized by row, column, then digit. It accepts the four new
-  elimination techniques. `LogicalStep` is the union of the two action types.
+  removals, canonicalized by row, column, then digit. `LogicalStep` is the union
+  of the two action types.
 
 Coordinates remain built-in integers in `0..8` (`TypeError` for other types,
 `IndexError` outside the range); digits must be built-in integers in `1..9`
@@ -214,14 +214,23 @@ The exact global priority is:
    row or column; remove that digit from the line outside the box.
 6. **Box-Line Reduction (Claiming)**: a line's two or three candidate positions
    for a digit share a box; remove it from that box outside the line.
+7. **Naked Triple**: exactly three cells in a unit are the only nonempty candidate
+   subsets of the same three digits; remove those digits from the other unit cells.
+8. **Hidden Triple**: three digits occur only within three unit cells; remove all
+   other candidates from those cells.
+9. **X-Wing**: two rows or two columns have exactly the same two positions for a
+   digit; remove that digit from the matching cross-lines outside the sources.
 
 Hidden Singles and both pair techniques visit rows `0..8`, columns `0..8`, then
 boxes in row-major order. Within each unit they visit ascending digits or
 lexicographically ascending digit pairs. Pointing visits boxes row-major, then
 digits ascending, checking the row before the column. Claiming visits rows before
-columns, each by ascending index, then ascending digits. Elimination techniques
-report only deductions that actually remove candidates. After every step the
-solver restarts at Naked Singles, so newly enabled singles take priority.
+columns, each by ascending index, then ascending digits. Triples visit rows,
+columns, then boxes; Naked Triples scan ascending cell combinations and Hidden
+Triples scan ascending digit combinations. X-Wing scans row-based then column-based
+patterns, ascending digit and source-line combination. Elimination techniques report
+only deductions that actually remove candidates. After every step the solver restarts
+at Naked Singles, so newly enabled singles take priority.
 
 `LogicalSolveResult` exposes final `state`, derived `grid`, an immutable `steps`
 tuple in application order, and `status`. It is immutable and hashable. The old
@@ -286,6 +295,9 @@ independent of enum declaration order and technique detection priority:
 | Hidden Pair | 4 | 5 | Hard |
 | Pointing | 5 | 6 | Hard |
 | Box-Line Reduction | 6 | 7 | Expert |
+| Naked Triple | 7 | 8 | Expert |
+| Hidden Triple | 8 | 9 | Expert |
+| X-Wing | 9 | 10 | Expert |
 
 The score is **sum of all step weights + candidate_elimination_count**. Every
 placement or elimination contributes one step weight, so longer traces already
@@ -637,7 +649,7 @@ src/sudoku_gen/candidates.py  Local immutable candidate sets
 src/sudoku_gen/solver.py      Solving, capped counting, and uniqueness checks
 src/sudoku_gen/human_solver.py  Logical solving, checked actions, and state replay
 src/sudoku_gen/_logical_models.py  Immutable logical state and action records
-src/sudoku_gen/_logical_techniques.py  Pure single, pair, and box/line deductions
+src/sudoku_gen/_logical_techniques.py  Pure singles, subsets, box/line, and X-Wing deductions
 src/sudoku_gen/difficulty.py  Explicit trace-based difficulty policy and reports
 src/sudoku_gen/pattern.py     Clue-position symmetry and descriptive pattern reports
 src/sudoku_gen/fingerprint.py Stable clue-grid identities and deduplication
@@ -654,6 +666,7 @@ tests/test_generator.py      Seeded generation and carving invariants
 tests/test_human_techniques.py  Independent single detection and priority fixtures
 tests/test_human_solver.py    Logical solving, replay, errors, and invariants
 tests/test_elimination_techniques.py  Pair and box/line deduction fixtures
+tests/test_triple_xwing_techniques.py  Triple, X-Wing, cascade, and replay fixtures
 tests/test_logical_state.py   Candidate-state validation and replay compatibility
 tests/test_logical_replay.py  Mixed logs and candidate-preservation properties
 tests/test_difficulty.py     Exact metrics, classification boundaries, and properties

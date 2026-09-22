@@ -59,6 +59,9 @@ _TECHNIQUE_RANK = MappingProxyType(
         Technique.HIDDEN_PAIR: 4,
         Technique.POINTING: 5,
         Technique.BOX_LINE_REDUCTION: 6,
+        Technique.NAKED_TRIPLE: 7,
+        Technique.HIDDEN_TRIPLE: 8,
+        Technique.X_WING: 9,
     }
 )
 _STEP_WEIGHT = MappingProxyType(
@@ -69,6 +72,9 @@ _STEP_WEIGHT = MappingProxyType(
         Technique.HIDDEN_PAIR: 5,
         Technique.POINTING: 6,
         Technique.BOX_LINE_REDUCTION: 7,
+        Technique.NAKED_TRIPLE: 8,
+        Technique.HIDDEN_TRIPLE: 9,
+        Technique.X_WING: 10,
     }
 )
 _TECHNIQUE_BAND = MappingProxyType(
@@ -79,6 +85,9 @@ _TECHNIQUE_BAND = MappingProxyType(
         Technique.HIDDEN_PAIR: Difficulty.HARD,
         Technique.POINTING: Difficulty.HARD,
         Technique.BOX_LINE_REDUCTION: Difficulty.EXPERT,
+        Technique.NAKED_TRIPLE: Difficulty.EXPERT,
+        Technique.HIDDEN_TRIPLE: Difficulty.EXPERT,
+        Technique.X_WING: Difficulty.EXPERT,
     }
 )
 # One weight point per board cell: every all-Naked-Single trace fits this budget.

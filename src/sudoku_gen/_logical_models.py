@@ -18,6 +18,9 @@ class Technique(Enum):
     HIDDEN_PAIR = "hidden_pair"
     POINTING = "pointing"
     BOX_LINE_REDUCTION = "box_line_reduction"
+    NAKED_TRIPLE = "naked_triple"
+    HIDDEN_TRIPLE = "hidden_triple"
+    X_WING = "x_wing"
 
 
 def _check_digit(value: int) -> None:
