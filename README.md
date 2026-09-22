@@ -1,10 +1,10 @@
 # Sudoku Gen
 
 A deterministic Sudoku generation engine intended to produce publication-quality
-puzzles. Phase 1.13 adds deterministic bounded batch generation for one requested
-difficulty, alongside stable clue-grid fingerprints, rotational clue-pattern
-symmetry, rule checks, mathematical solving, and seeded puzzle generation.
-Application features have not been implemented.
+puzzles. Phase 1.14 adds deterministic batch QA statistics, invariant audits, and
+lightweight benchmark timing alongside bounded batch generation, stable
+fingerprints, rotational clue-pattern symmetry, rule checks, mathematical solving,
+and seeded puzzle generation. Application features have not been implemented.
 
 ## Domain model
 
@@ -358,6 +358,44 @@ which treats different-valued puzzles with the same clue layout as duplicates.
 Batch generation has no persistence or cross-run duplicate store, and it runs
 sequentially without concurrency.
 
+## Batch QA and benchmarks
+
+```python
+from sudoku_gen.benchmark import BenchmarkConfig, benchmark_batch
+from sudoku_gen.quality import analyze_batch, audit_batch
+
+quality = analyze_batch(batch)
+audit = audit_batch(batch, symmetry=Symmetry.ROTATIONAL_180)
+timing = benchmark_batch(
+    BenchmarkConfig(1, Difficulty.EASY, seed=2031, target_clues=81, max_attempts=1)
+)
+```
+
+`analyze_batch(batch) -> BatchQualityReport` derives immutable, deterministic
+statistics from accepted items: counts, whole-stream acceptance and rejection
+rates, clue-count and difficulty-score minimum/maximum/mean/median, and a stable
+tuple of hardest-technique counts. The acceptance rate is `accepted / attempts`;
+the difficulty and duplicate rejection rates use their respective counters over
+the same total. Together, the three rates account for every candidate attempt.
+
+`audit_puzzle(item, ...)` and `audit_batch(batch, symmetry=None)` independently
+compose existing validation, solving, rating, fingerprinting, and symmetry APIs.
+They return immutable diagnostic reports with ordered issue records instead of
+raising for ordinary quality failures. A batch audit verifies the stored solution,
+clues, uniqueness, mathematical recovery, fresh difficulty report, requested
+difficulty, fingerprint, and canonical accepted-item uniqueness. Supply symmetry
+when its generation configuration is known; `PuzzleBatch` deliberately does not
+store that configuration.
+
+`benchmark_batch(BenchmarkConfig(...)) -> BenchmarkResult` measures one real
+bounded batch call with `time.perf_counter()`. It reports elapsed seconds, accepted
+puzzles, candidate attempts, attempts per accepted puzzle, both throughput rates,
+and the deterministic quality report. `representative_benchmark_configs()` and
+`run_representative_benchmarks()` provide small manual configurations for Easy,
+Medium, Hard, and Expert. Timings are machine-dependent diagnostics, not
+correctness gates; a bounded generation failure is propagated without retries or
+changing the configured attempt limit. No timing data is persisted.
+
 ## Grid fingerprints and deduplication
 
 ```python
@@ -583,6 +621,10 @@ global-random isolation, immutable results, and a real completed Easy generation
 Pattern tests cover all rotational orbits, center behavior, value-independent clue
 symmetry, descriptive counts, atomic symmetric carving, target lower bounds,
 reproducibility, difficulty-targeted forwarding, and global-random isolation.
+Batch tests cover bounded exact-difficulty orchestration and configurable
+deduplication. Quality tests cover exact metrics, rate accounting, deterministic
+audits, fingerprint/report diagnostics, and symmetry checks. Benchmark tests use a
+controlled clock to verify arithmetic without machine-specific timing assertions.
 
 ## Repository layout
 
@@ -600,6 +642,8 @@ src/sudoku_gen/difficulty.py  Explicit trace-based difficulty policy and reports
 src/sudoku_gen/pattern.py     Clue-position symmetry and descriptive pattern reports
 src/sudoku_gen/fingerprint.py Stable clue-grid identities and deduplication
 src/sudoku_gen/generator.py   Seeded generation, carving, and bounded targeting/batches
+src/sudoku_gen/quality.py     Batch statistics and independent invariant audits
+src/sudoku_gen/benchmark.py   Observational bounded-batch timing harness
 tests/test_package.py        Package import smoke test
 tests/test_models.py         Domain model tests and serialization properties
 tests/test_validation.py     Sudoku rules, coordinates, and clue-removal property
@@ -618,6 +662,8 @@ tests/test_difficulty_generation.py  Bounded exact-difficulty generation
 tests/test_pattern.py        Symmetry, pattern reports, and symmetric carving
 tests/test_fingerprint.py    Fingerprint modes and order-preserving deduplication
 tests/test_batch_generation.py  Bounded difficulty batch orchestration
+tests/test_quality.py        Deterministic statistics and invariant audit reports
+tests/test_benchmark.py      Controlled benchmark arithmetic and configurations
 pyproject.toml               Package metadata, dev dependencies, tool configuration
 uv.lock                      Resolved dependency versions
 .python-version              Local Python version
