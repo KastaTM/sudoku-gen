@@ -1,10 +1,9 @@
 # Sudoku Gen
 
 A deterministic Sudoku generation engine intended to produce publication-quality
-puzzles. Phase 1.9 adds deterministic difficulty reports derived from human-style
-solving traces, alongside the immutable domain model, rule checks, mathematical
-solver, and seeded puzzle generation. Application features have not been
-implemented.
+puzzles. Phase 1.11 adds rotational clue-pattern symmetry and descriptive pattern
+reports alongside deterministic difficulty, rule checks, mathematical solving, and
+seeded puzzle generation. Application features have not been implemented.
 
 ## Domain model
 
@@ -315,14 +314,54 @@ exists. They are not calibrated to commercial publishers or universal human
 difficulty; future calibration may adjust weights and thresholds. Reports are
 derived on demand and are not stored in `SudokuPuzzle`.
 
+## Clue patterns and symmetry
+
+```python
+from sudoku_gen.generator import generate_puzzle
+from sudoku_gen.pattern import Symmetry, analyze_pattern, is_symmetric
+
+puzzle = generate_puzzle(seed=2026, target_clues=30, symmetry=Symmetry.ROTATIONAL_180)
+assert is_symmetric(puzzle.grid, Symmetry.ROTATIONAL_180)
+report = analyze_pattern(puzzle.grid)
+```
+
+`Symmetry` has `NONE` and `ROTATIONAL_180`. Symmetry concerns only clue positions:
+under 180-degree rotation, index `i` and `80 - i` must both be clues or both be
+empty. Clue values need not match. The center at index `40` maps to itself.
+`is_symmetric(grid, symmetry)` is pure; `Symmetry.NONE` places no constraint and
+therefore returns `True` for every grid. Invalid symmetry types, including strings,
+raise `TypeError`.
+
+`analyze_pattern(grid) -> PuzzlePatternReport` returns immutable descriptive data:
+`clue_count`, detected rotational `symmetry` (or `NONE`), and row-, column-, and
+box-clue count tuples in ascending row/column/box order. It does not assign a
+beauty score or reject any layout.
+
+`generate_puzzle` accepts `symmetry: Symmetry = Symmetry.NONE`. The default path
+is unchanged. Rotational carving shuffles the 40 complementary pairs plus the
+single center orbit using the generator's local RNG. A pair is tentatively removed
+as one group, checked for uniqueness once, then accepted or rejected as one group;
+the generator never removes one side independently. A group that would take the
+clue count below `target_clues` is skipped. Thus actual clues remain at least the
+target, but rotational orbit sizes can prevent reaching it exactly and symmetry is
+never broken merely to reach the target.
+
+`generate_puzzle_for_difficulty` also accepts the same `symmetry` keyword and
+uses it for every candidate attempt. Its exact difficulty matching, bounded failure,
+rating behavior, and seed semantics are unchanged. Repeated calls with the same
+explicit seed, clue target, symmetry, and difficulty parameters reproduce the same
+candidate sequence and result or bounded failure. The module-level random state is
+not used or changed.
+
 ## Generation
 
 ```python
 from sudoku_gen.generator import generate_puzzle, generate_solution
+from sudoku_gen.pattern import Symmetry
 from sudoku_gen.validation import clue_count
 
 solution = generate_solution(seed=1234)
-puzzle = generate_puzzle(seed=1234, target_clues=30)
+puzzle = generate_puzzle(seed=1234, target_clues=30, symmetry=Symmetry.NONE)
 assert puzzle.solution == solution
 actual_clues = clue_count(puzzle.grid)
 ```
@@ -330,11 +369,13 @@ actual_clues = clue_count(puzzle.grid)
 - `generate_solution(seed: int | None = None) -> Grid` constructs a valid completed
   Sudoku by randomized backtracking. It selects among equally constrained MRV
   cells and shuffles candidate digits during construction.
-- `generate_puzzle(*, seed: int | None = None, target_clues: int = 30) -> SudokuPuzzle`
+- `generate_puzzle(*, seed: int | None = None, target_clues: int = 30,
+  symmetry: Symmetry = Symmetry.NONE) -> SudokuPuzzle`
   constructs a solution, then attempts clue removals in a shuffled order. Every
   accepted removal must pass `has_unique_solution()`, which stops upon finding a
   second solution. The returned clues agree with the associated solution, and
-  solving the generated puzzle recovers that solution.
+  solving the generated puzzle recovers that solution. Rotational symmetry carves
+  complementary pairs atomically; `NONE` preserves the original behavior.
 - `clue_count(grid: Grid) -> int` derives the number of non-zero cells. The count
   is not stored as redundant model state.
 
@@ -458,6 +499,9 @@ one-solve accounting, repeatability, and bounded score/severity monotonicity.
 Targeted-generation tests cover exact matching for each normal difficulty,
 deterministic attempt progression, bounded exhaustion, single rating per candidate,
 global-random isolation, immutable results, and a real completed Easy generation.
+Pattern tests cover all rotational orbits, center behavior, value-independent clue
+symmetry, descriptive counts, atomic symmetric carving, target lower bounds,
+reproducibility, difficulty-targeted forwarding, and global-random isolation.
 
 ## Repository layout
 
@@ -472,6 +516,7 @@ src/sudoku_gen/human_solver.py  Logical solving, checked actions, and state repl
 src/sudoku_gen/_logical_models.py  Immutable logical state and action records
 src/sudoku_gen/_logical_techniques.py  Pure single, pair, and box/line deductions
 src/sudoku_gen/difficulty.py  Explicit trace-based difficulty policy and reports
+src/sudoku_gen/pattern.py     Clue-position symmetry and descriptive pattern reports
 src/sudoku_gen/generator.py   Seeded generation, carving, and bounded rating targeting
 tests/test_package.py        Package import smoke test
 tests/test_models.py         Domain model tests and serialization properties
@@ -488,6 +533,7 @@ tests/test_logical_replay.py  Mixed logs and candidate-preservation properties
 tests/test_difficulty.py     Exact metrics, classification boundaries, and properties
 tests/test_difficulty_puzzles.py  Real puzzle ratings and conservative status handling
 tests/test_difficulty_generation.py  Bounded exact-difficulty generation
+tests/test_pattern.py        Symmetry, pattern reports, and symmetric carving
 pyproject.toml               Package metadata, dev dependencies, tool configuration
 uv.lock                      Resolved dependency versions
 .python-version              Local Python version

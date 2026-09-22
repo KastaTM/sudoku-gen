@@ -7,6 +7,7 @@ from sudoku_gen.candidates import candidates
 from sudoku_gen.difficulty import Difficulty, DifficultyReport, rate_difficulty
 from sudoku_gen.exceptions import DifficultyGenerationError, SudokuError
 from sudoku_gen.models import Grid, SudokuPuzzle
+from sudoku_gen.pattern import Symmetry
 from sudoku_gen.solver import has_unique_solution
 from sudoku_gen.validation import empty_cells, is_valid_solution
 
@@ -40,7 +41,12 @@ def generate_solution(seed: int | None = None) -> Grid:
     return _generate_solution(_local_rng(seed))
 
 
-def generate_puzzle(*, seed: int | None = None, target_clues: int = 30) -> SudokuPuzzle:
+def generate_puzzle(
+    *,
+    seed: int | None = None,
+    target_clues: int = 30,
+    symmetry: Symmetry = Symmetry.NONE,
+) -> SudokuPuzzle:
     """Return a uniquely solvable puzzle together with its completed solution.
 
     target_clues must be a built-in integer from 17 through 81. Other types
@@ -49,27 +55,47 @@ def generate_puzzle(*, seed: int | None = None, target_clues: int = 30) -> Sudok
     The result may have more clues than requested when the pass is exhausted,
     but never fewer. Clue count is not a difficulty rating or minimality claim.
 
-    The same seed and target reproduce both the solution and clue pattern for
-    this generator version. One local RNG supplies all generation randomness.
+    symmetry is a Symmetry. NONE retains the original individual-cell carving
+    order. ROTATIONAL_180 removes complementary clue pairs (and the center cell)
+    atomically, preserving the same lower-bound target semantics. Symmetry never
+    breaks to reach an exact target.
+
+    The same seed, target, and symmetry reproduce both solution and clue pattern
+    for this generator version. One local RNG supplies all generation randomness.
     """
     if type(target_clues) is not int:
         raise TypeError("target_clues must be a built-in integer.")
     if not 17 <= target_clues <= 81:
         raise ValueError("target_clues must be between 17 and 81.")
+    _validate_symmetry(symmetry)
 
     rng = _local_rng(seed)
     solution = _generate_solution(rng)
     grid = solution
     remaining = 81
-    positions = list(range(81))
-    rng.shuffle(positions)
-    for index in positions:
-        if remaining == target_clues:
-            break
-        tentative = Grid(grid.cells[:index] + (0,) + grid.cells[index + 1 :])
-        if has_unique_solution(tentative):
-            grid = tentative
-            remaining -= 1
+    if symmetry is Symmetry.NONE:
+        positions = list(range(81))
+        rng.shuffle(positions)
+        for index in positions:
+            if remaining == target_clues:
+                break
+            tentative = Grid(grid.cells[:index] + (0,) + grid.cells[index + 1 :])
+            if has_unique_solution(tentative):
+                grid = tentative
+                remaining -= 1
+    else:
+        orbits = _rotational_orbits()
+        rng.shuffle(orbits)
+        for orbit in orbits:
+            if remaining - len(orbit) < target_clues:
+                continue
+            cells = list(grid.cells)
+            for index in orbit:
+                cells[index] = 0
+            tentative = Grid(tuple(cells))
+            if has_unique_solution(tentative):
+                grid = tentative
+                remaining -= len(orbit)
     return SudokuPuzzle(grid=grid, solution=solution)
 
 
@@ -79,6 +105,7 @@ def generate_puzzle_for_difficulty(
     seed: int | None = None,
     target_clues: int = 30,
     max_attempts: int = 100,
+    symmetry: Symmetry = Symmetry.NONE,
 ) -> DifficultyGeneratedPuzzle:
     """Return a uniquely solvable puzzle with an exactly matching rating.
 
@@ -96,13 +123,16 @@ def generate_puzzle_for_difficulty(
         raise TypeError("max_attempts must be a built-in integer.")
     if max_attempts < 1:
         raise ValueError("max_attempts must be at least 1.")
+    _validate_symmetry(symmetry)
 
     rng = _local_rng(seed)
     for attempt in range(1, max_attempts + 1):
         # The remainder uniquely identifies the one-based attempt under this
         # bound, so even identical random draws cannot repeat a candidate seed.
         attempt_seed = rng.getrandbits(128) * max_attempts + attempt - 1
-        puzzle = generate_puzzle(seed=attempt_seed, target_clues=target_clues)
+        puzzle = generate_puzzle(
+            seed=attempt_seed, target_clues=target_clues, symmetry=symmetry
+        )
         report = rate_difficulty(puzzle.grid)
         if report.difficulty is difficulty:
             return DifficultyGeneratedPuzzle(puzzle, report, attempt)
@@ -115,6 +145,16 @@ def _local_rng(seed: int | None) -> Random:
     if seed is not None and type(seed) is not int:
         raise TypeError("seed must be a built-in integer or None.")
     return Random(seed)
+
+
+def _validate_symmetry(symmetry: Symmetry) -> None:
+    if not isinstance(symmetry, Symmetry):
+        raise TypeError("symmetry must be a Symmetry.")
+
+
+def _rotational_orbits() -> list[tuple[int, ...]]:
+    """Return the 40 paired and one center clue-position orbit exactly once."""
+    return [(index, 80 - index) for index in range(40)] + [(40,)]
 
 
 def _generate_solution(rng: Random) -> Grid:

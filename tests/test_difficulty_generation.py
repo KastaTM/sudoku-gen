@@ -14,6 +14,7 @@ from sudoku_gen.generator import (
 )
 from sudoku_gen.human_solver import LogicalSolveStatus
 from sudoku_gen.models import Grid, SudokuPuzzle
+from sudoku_gen.pattern import Symmetry
 from sudoku_gen.solver import has_unique_solution, solve
 from sudoku_gen.validation import clue_count, is_valid_grid, is_valid_solution
 
@@ -79,9 +80,12 @@ def test_each_normal_difficulty_accepts_an_exactly_matching_candidate(
     generated: list[int | None] = []
     rated: list[Grid] = []
 
-    def generate_candidate(*, seed: int | None, target_clues: int) -> SudokuPuzzle:
+    def generate_candidate(
+        *, seed: int | None, target_clues: int, symmetry: Symmetry
+    ) -> SudokuPuzzle:
         generated.append(seed)
         assert target_clues == 25
+        assert symmetry is Symmetry.NONE
         return puzzle
 
     def rate_candidate(grid: Grid) -> DifficultyReport:
@@ -114,7 +118,9 @@ def test_mismatches_advance_to_distinct_seeded_candidates_and_final_attempt_can_
     ratings = iter((Difficulty.MEDIUM, Difficulty.UNRATED, Difficulty.HARD))
     calls = 0
 
-    def generate_candidate(*, seed: int | None, target_clues: int) -> SudokuPuzzle:
+    def generate_candidate(
+        *, seed: int | None, target_clues: int, symmetry: Symmetry
+    ) -> SudokuPuzzle:
         seeds.append(seed)
         return puzzle
 
@@ -148,7 +154,9 @@ def test_seeded_attempt_sequence_and_result_are_repeatable(
         seeds: list[int | None] = []
         reports = iter((report_for(Difficulty.MEDIUM), report_for(Difficulty.EASY)))
 
-        def generate_candidate(*, seed: int | None, target_clues: int) -> SudokuPuzzle:
+        def generate_candidate(
+            *, seed: int | None, target_clues: int, symmetry: Symmetry
+        ) -> SudokuPuzzle:
             seeds.append(seed)
             return puzzle
 
@@ -172,7 +180,9 @@ def test_exhaustion_rates_and_generates_exactly_the_bound(
     seeds: list[int | None] = []
     ratings: list[Grid] = []
 
-    def generate_candidate(*, seed: int | None, target_clues: int) -> SudokuPuzzle:
+    def generate_candidate(
+        *, seed: int | None, target_clues: int, symmetry: Symmetry
+    ) -> SudokuPuzzle:
         seeds.append(seed)
         return puzzle
 
@@ -200,7 +210,9 @@ def test_early_success_generates_and_rates_once(
     generated = 0
     rated = 0
 
-    def generate_candidate(*, seed: int | None, target_clues: int) -> SudokuPuzzle:
+    def generate_candidate(
+        *, seed: int | None, target_clues: int, symmetry: Symmetry
+    ) -> SudokuPuzzle:
         nonlocal generated
         generated += 1
         return puzzle
