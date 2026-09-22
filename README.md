@@ -569,6 +569,38 @@ grids rate Easy with score zero; targeting a harder label at 81 naturally exhaus
 the bound. Generator filtering beyond this bounded exact-match API and clue-pattern
 symmetry are not implemented.
 
+## Publication content plans
+
+Phase 2.1 adds an editorial domain layer in `sudoku_gen.publication`. It assembles
+trusted generated batches into deterministic book content; it does not plan pages,
+serialize plans, or render PDF files.
+
+```python
+from sudoku_gen.publication import BookSectionInput, build_book_plan
+
+plan = build_book_plan(
+    (
+        BookSectionInput("Easy", easy_batch),
+        BookSectionInput("Hard", hard_batch),
+    )
+)
+assert tuple(puzzle.number for puzzle in plan.puzzles) == tuple(
+    range(1, plan.total_puzzle_count + 1)
+)
+```
+
+`BookPuzzle` references an existing `SudokuPuzzle`, its trusted difficulty report,
+and a book-mode fingerprint; it requires a stored solution. `BookSection` preserves
+the caller's title and batch order, and only accepts one normal publishable
+difficulty. `BookPlan` preserves section order and assigns numbering globally
+across section boundaries.
+
+`build_book_plan()` defaults to `FingerprintMode.DIGIT_NORMALIZED` and recomputes
+each puzzle identity in that requested mode. It raises
+`DuplicatePublicationPuzzleError` for duplicate identities across batches rather
+than discarding content or generating replacements. The builder does not solve,
+rate, or otherwise rerun Phase 1 engine work.
+
 ## Development setup
 
 Install Python 3.12+ and `uv`, then run from the repository root:
