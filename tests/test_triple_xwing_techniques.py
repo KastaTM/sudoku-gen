@@ -329,6 +329,8 @@ def test_real_generated_fixture_previously_stuck_now_solves_with_x_wing() -> Non
         patch.object(techniques, "naked_triples", empty),
         patch.object(techniques, "hidden_triples", empty),
         patch.object(techniques, "x_wings", empty),
+        patch.object(techniques, "xy_wings", empty),
+        patch.object(techniques, "swordfish", empty),
     ):
         previous = solve_logically(grid)
     current = solve_logically(grid)

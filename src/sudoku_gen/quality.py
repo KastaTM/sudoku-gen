@@ -23,6 +23,11 @@ _TECHNIQUE_ORDER: tuple[Technique | None, ...] = (
     Technique.HIDDEN_PAIR,
     Technique.POINTING,
     Technique.BOX_LINE_REDUCTION,
+    Technique.NAKED_TRIPLE,
+    Technique.HIDDEN_TRIPLE,
+    Technique.X_WING,
+    Technique.XY_WING,
+    Technique.SWORDFISH,
 )
 
 

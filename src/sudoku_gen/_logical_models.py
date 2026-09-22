@@ -21,6 +21,8 @@ class Technique(Enum):
     NAKED_TRIPLE = "naked_triple"
     HIDDEN_TRIPLE = "hidden_triple"
     X_WING = "x_wing"
+    XY_WING = "xy_wing"
+    SWORDFISH = "swordfish"
 
 
 def _check_digit(value: int) -> None:

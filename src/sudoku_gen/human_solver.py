@@ -1,8 +1,8 @@
 """Deterministic logical Sudoku solving with persistent candidate eliminations.
 
 Priority: Naked Single, Hidden Single, Naked Pair, Hidden Pair, Pointing,
-Box-Line Reduction, Naked Triple, Hidden Triple, X-Wing. Every step restarts
-this priority. No guessing or search.
+Box-Line Reduction, Naked Triple, Hidden Triple, X-Wing, XY-Wing, Swordfish.
+Every step restarts this priority. No guessing or search.
 """
 
 from collections.abc import Iterator
@@ -62,6 +62,10 @@ def _steps_for(state: LogicalState, technique: Technique) -> Iterator[LogicalSte
             yield from techniques.hidden_triples(state)
         case Technique.X_WING:
             yield from techniques.x_wings(state)
+        case Technique.XY_WING:
+            yield from techniques.xy_wings(state)
+        case Technique.SWORDFISH:
+            yield from techniques.swordfish(state)
 
 
 def next_step(grid: Grid | LogicalState) -> LogicalStep | None:
@@ -77,7 +81,9 @@ def next_step(grid: Grid | LogicalState) -> LogicalStep | None:
     Triples visit rows, columns, then boxes; Naked Triples scan cell combinations
     and Hidden Triples digit combinations in ascending order. X-Wing scans
     row-based then column-based patterns, digits ascending and source lines
-    ascending. All eliminations within a step are sorted by row, column, then digit.
+    ascending. XY-Wing scans pivots and pincers row-major. Swordfish scans
+    row-based then column-based, digits and source triples ascending. All
+    eliminations within a step are sorted by row, column, then digit.
     """
     state = _as_state(grid)
     _check_consistency(state)

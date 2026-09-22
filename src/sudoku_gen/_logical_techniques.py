@@ -58,6 +58,26 @@ def _positions(state: LogicalState, unit: _Unit, value: int) -> _Unit:
     return tuple(cell for cell in unit if value in _options(state, cell))
 
 
+def _peers(cell: _Cell) -> _Unit:
+    """Return all other cells sharing the cell's row, column, or box.
+
+    The row-major ordering gives XY-Wing pincer and target scans a stable
+    coordinate order without maintaining a second candidate representation.
+    """
+    row, column = cell
+    return tuple(
+        (other_row, other_column)
+        for other_row in range(9)
+        for other_column in range(9)
+        if (other_row, other_column) != cell
+        and (
+            other_row == row
+            or other_column == column
+            or (other_row // 3, other_column // 3) == (row // 3, column // 3)
+        )
+    )
+
+
 def _removals(
     state: LogicalState, cells: _Unit, values: frozenset[int]
 ) -> tuple[CandidateElimination, ...]:
@@ -280,3 +300,103 @@ def x_wings(state: LogicalState) -> Iterator[EliminationStep]:
             eliminations = _removals(state, targets, frozenset((value,)))
             if eliminations:
                 yield EliminationStep(Technique.X_WING, eliminations)
+
+
+def xy_wings(state: LogicalState) -> Iterator[EliminationStep]:
+    """Find XY-Wings with row-major pivots and pincers.
+
+    A pivot ``{X, Y}`` is considered in row-major order with ``X < Y``. Its
+    ``{X, Z}`` pincer then precedes its ``{Y, Z}`` pincer in row-major order.
+    The eliminated ``Z`` candidates are emitted in row-major order. Pincers
+    may share any peer relation with the pivot and do not need to see each other.
+    """
+    cells = tuple((row, column) for row in range(9) for column in range(9))
+    for pivot in cells:
+        pivot_values = _options(state, pivot)
+        if len(pivot_values) != 2:
+            continue
+        first, second = sorted(pivot_values)
+        pivot_peers = _peers(pivot)
+        for first_pincer in pivot_peers:
+            first_values = _options(state, first_pincer)
+            if len(first_values) != 2 or first_values & pivot_values != {first}:
+                continue
+            third_values = first_values - pivot_values
+            if len(third_values) != 1:
+                continue
+            third = next(iter(third_values))
+            for second_pincer in pivot_peers:
+                if second_pincer == first_pincer:
+                    continue
+                if _options(state, second_pincer) != frozenset((second, third)):
+                    continue
+                participants = frozenset((pivot, first_pincer, second_pincer))
+                second_peers = frozenset(_peers(second_pincer))
+                targets = tuple(
+                    cell
+                    for cell in _peers(first_pincer)
+                    if cell in second_peers and cell not in participants
+                )
+                eliminations = _removals(state, targets, frozenset((third,)))
+                if eliminations:
+                    yield EliminationStep(Technique.XY_WING, eliminations)
+
+
+def swordfish(state: LogicalState) -> Iterator[EliminationStep]:
+    """Find row-based then column-based Swordfish deductions.
+
+    Within each orientation, digits scan ascending and source-line triples use
+    lexicographic combination order. Each source line has two or three
+    positions, their union has exactly three target lines, and removals are in
+    canonical row-major order.
+    """
+    for value in range(1, 10):
+        positions = {
+            row: tuple(
+                column for column in range(9) if value in _options(state, (row, column))
+            )
+            for row in range(9)
+        }
+        for source_rows in combinations(range(9), 3):
+            columns = tuple(
+                sorted({column for row in source_rows for column in positions[row]})
+            )
+            if (
+                any(not 2 <= len(positions[row]) <= 3 for row in source_rows)
+                or len(columns) != 3
+            ):
+                continue
+            targets = tuple(
+                (row, column)
+                for row in range(9)
+                if row not in source_rows
+                for column in columns
+            )
+            eliminations = _removals(state, targets, frozenset((value,)))
+            if eliminations:
+                yield EliminationStep(Technique.SWORDFISH, eliminations)
+    for value in range(1, 10):
+        positions = {
+            column: tuple(
+                row for row in range(9) if value in _options(state, (row, column))
+            )
+            for column in range(9)
+        }
+        for source_columns in combinations(range(9), 3):
+            rows = tuple(
+                sorted({row for column in source_columns for row in positions[column]})
+            )
+            if (
+                any(not 2 <= len(positions[column]) <= 3 for column in source_columns)
+                or len(rows) != 3
+            ):
+                continue
+            targets = tuple(
+                (row, column)
+                for row in rows
+                for column in range(9)
+                if column not in source_columns
+            )
+            eliminations = _removals(state, targets, frozenset((value,)))
+            if eliminations:
+                yield EliminationStep(Technique.SWORDFISH, eliminations)
