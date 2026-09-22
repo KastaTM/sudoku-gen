@@ -601,6 +601,31 @@ each puzzle identity in that requested mode. It raises
 than discarding content or generating replacements. The builder does not solve,
 rate, or otherwise rerun Phase 1 engine work.
 
+Phase 2.2 converts a `BookPlan` into an immutable abstract `PagePlan` without
+copying its Sudoku content:
+
+```python
+from sudoku_gen.publication import PageLayoutProfile, plan_book_pages
+
+pages = plan_book_pages(
+    plan,
+    layout=PageLayoutProfile(
+        puzzles_per_page=2,
+        solutions_per_page=6,
+        first_page_number=5,
+    ),
+)
+```
+
+Puzzle pages always precede solution pages, and both preserve the global
+`BookPuzzle.number` order. Page numbers are continuous from `first_page_number`.
+Each page contains contiguous, one-based abstract slots up to its independently
+configured capacity; a page may cross a book-section boundary. The lookup methods
+`page_for_puzzle()` and `solution_page_for_puzzle()` locate either appearance by
+global puzzle number. `PagePlan` contains no physical dimensions, coordinates,
+fonts, drawing instructions, or PDF behavior; a later renderer maps these abstract
+slots onto physical pages.
+
 ## Development setup
 
 Install Python 3.12+ and `uv`, then run from the repository root:
