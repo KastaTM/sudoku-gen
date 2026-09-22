@@ -1,9 +1,10 @@
 # Sudoku Gen
 
 A deterministic Sudoku generation engine intended to produce publication-quality
-puzzles. Phase 1.11 adds rotational clue-pattern symmetry and descriptive pattern
-reports alongside deterministic difficulty, rule checks, mathematical solving, and
-seeded puzzle generation. Application features have not been implemented.
+puzzles. Phase 1.12 adds stable clue-grid fingerprints and explicit deduplication
+utilities alongside rotational clue-pattern symmetry, deterministic difficulty, rule
+checks, mathematical solving, and seeded puzzle generation. Application features
+have not been implemented.
 
 ## Domain model
 
@@ -314,6 +315,43 @@ exists. They are not calibrated to commercial publishers or universal human
 difficulty; future calibration may adjust weights and thresholds. Reports are
 derived on demand and are not stored in `SudokuPuzzle`.
 
+## Grid fingerprints and deduplication
+
+```python
+from sudoku_gen.fingerprint import (
+    FingerprintMode,
+    deduplicate_puzzles,
+    fingerprint_puzzle,
+)
+
+fingerprint = fingerprint_puzzle(puzzle)
+unique_puzzles = deduplicate_puzzles(puzzles, mode=FingerprintMode.EXACT)
+```
+
+`fingerprint_grid(grid, mode=FingerprintMode.EXACT)` and
+`fingerprint_puzzle(puzzle, mode=FingerprintMode.EXACT)` return immutable,
+hashable `GridFingerprint` objects. Each contains the selected `FingerprintMode`
+and a stable SHA-256 hexadecimal digest. The digest input includes a versioned
+Sudoku Gen domain string and the mode, so fingerprints from different modes are
+not interchangeable. `fingerprint_puzzle()` uses only `puzzle.grid`: an optional
+associated solution does not affect the published puzzle's identity.
+
+The modes are explicit enums; strings and other values are rejected:
+
+- `EXACT` is the default and uses all 81 cells exactly as stored.
+- `DIGIT_NORMALIZED` maps each non-zero digit to `1`, `2`, and so on by its first
+  row-major appearance, while retaining zeroes and positions. It detects global
+  digit relabeling only. It does not identify row, column, band, stack, transpose,
+  rotation, reflection, or other geometric Sudoku isomorphisms.
+- `CLUE_PATTERN` uses only whether each cell is zero or a clue. It is available for
+  descriptive or caller-selected grouping and is never selected implicitly.
+
+`deduplicate_puzzles(puzzles, mode=FingerprintMode.EXACT)` is pure, returns a
+tuple, preserves input order, and retains the first `SudokuPuzzle` for each chosen
+identity. Internally it compares deterministic canonical keys rather than digest
+values alone, so even a theoretical SHA-256 collision cannot discard a distinct
+puzzle. It does not change generation or automatically reject generated puzzles.
+
 ## Clue patterns and symmetry
 
 ```python
@@ -517,6 +555,7 @@ src/sudoku_gen/_logical_models.py  Immutable logical state and action records
 src/sudoku_gen/_logical_techniques.py  Pure single, pair, and box/line deductions
 src/sudoku_gen/difficulty.py  Explicit trace-based difficulty policy and reports
 src/sudoku_gen/pattern.py     Clue-position symmetry and descriptive pattern reports
+src/sudoku_gen/fingerprint.py Stable clue-grid identities and deduplication
 src/sudoku_gen/generator.py   Seeded generation, carving, and bounded rating targeting
 tests/test_package.py        Package import smoke test
 tests/test_models.py         Domain model tests and serialization properties
@@ -534,6 +573,7 @@ tests/test_difficulty.py     Exact metrics, classification boundaries, and prope
 tests/test_difficulty_puzzles.py  Real puzzle ratings and conservative status handling
 tests/test_difficulty_generation.py  Bounded exact-difficulty generation
 tests/test_pattern.py        Symmetry, pattern reports, and symmetric carving
+tests/test_fingerprint.py    Fingerprint modes and order-preserving deduplication
 pyproject.toml               Package metadata, dev dependencies, tool configuration
 uv.lock                      Resolved dependency versions
 .python-version              Local Python version
