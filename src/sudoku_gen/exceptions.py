@@ -7,3 +7,7 @@ class SudokuError(Exception):
 
 class InvalidGridError(SudokuError, ValueError):
     """A grid has a malformed representation or a detected Sudoku contradiction."""
+
+
+class DifficultyGenerationError(SudokuError):
+    """Bounded generation could not find a puzzle at the requested difficulty."""

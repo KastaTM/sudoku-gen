@@ -1,12 +1,33 @@
-"""Seeded solution construction and puzzle carving with preserved uniqueness."""
+"""Seeded solution construction, carving, and bounded difficulty targeting."""
 
+from dataclasses import dataclass
 from random import Random
 
 from sudoku_gen.candidates import candidates
-from sudoku_gen.exceptions import SudokuError
+from sudoku_gen.difficulty import Difficulty, DifficultyReport, rate_difficulty
+from sudoku_gen.exceptions import DifficultyGenerationError, SudokuError
 from sudoku_gen.models import Grid, SudokuPuzzle
 from sudoku_gen.solver import has_unique_solution
 from sudoku_gen.validation import empty_cells, is_valid_solution
+
+
+@dataclass(frozen=True, slots=True)
+class DifficultyGeneratedPuzzle:
+    """A uniquely solvable generated puzzle accepted by its exact difficulty."""
+
+    puzzle: SudokuPuzzle
+    difficulty_report: DifficultyReport
+    attempts: int
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.puzzle, SudokuPuzzle):
+            raise TypeError("puzzle must be a SudokuPuzzle.")
+        if not isinstance(self.difficulty_report, DifficultyReport):
+            raise TypeError("difficulty_report must be a DifficultyReport.")
+        if type(self.attempts) is not int:
+            raise TypeError("attempts must be a built-in integer.")
+        if self.attempts < 1:
+            raise ValueError("attempts must be at least 1.")
 
 
 def generate_solution(seed: int | None = None) -> Grid:
@@ -50,6 +71,44 @@ def generate_puzzle(*, seed: int | None = None, target_clues: int = 30) -> Sudok
             grid = tentative
             remaining -= 1
     return SudokuPuzzle(grid=grid, solution=solution)
+
+
+def generate_puzzle_for_difficulty(
+    difficulty: Difficulty,
+    *,
+    seed: int | None = None,
+    target_clues: int = 30,
+    max_attempts: int = 100,
+) -> DifficultyGeneratedPuzzle:
+    """Return a uniquely solvable puzzle with an exactly matching rating.
+
+    Each attempt uses a distinct seed derived from one local Random(seed), then
+    delegates carving to generate_puzzle() and rates that one candidate once.
+    The same explicit arguments therefore traverse the same candidate sequence.
+    UNRATED candidates simply do not match. No fallback, guessing, or unbounded
+    retry is used; DifficultyGenerationError reports a fully exhausted bound.
+    """
+    if not isinstance(difficulty, Difficulty):
+        raise TypeError("difficulty must be a Difficulty.")
+    if difficulty is Difficulty.UNRATED:
+        raise ValueError("UNRATED cannot be requested for puzzle generation.")
+    if type(max_attempts) is not int:
+        raise TypeError("max_attempts must be a built-in integer.")
+    if max_attempts < 1:
+        raise ValueError("max_attempts must be at least 1.")
+
+    rng = _local_rng(seed)
+    for attempt in range(1, max_attempts + 1):
+        # The remainder uniquely identifies the one-based attempt under this
+        # bound, so even identical random draws cannot repeat a candidate seed.
+        attempt_seed = rng.getrandbits(128) * max_attempts + attempt - 1
+        puzzle = generate_puzzle(seed=attempt_seed, target_clues=target_clues)
+        report = rate_difficulty(puzzle.grid)
+        if report.difficulty is difficulty:
+            return DifficultyGeneratedPuzzle(puzzle, report, attempt)
+    raise DifficultyGenerationError(
+        f"Could not generate a {difficulty.value} puzzle after {max_attempts} attempts."
+    )
 
 
 def _local_rng(seed: int | None) -> Random:

@@ -1,10 +1,10 @@
 # Sudoku Gen
 
 A deterministic Sudoku generation engine intended to produce publication-quality
-puzzles. Phase 1.8 extends human-style solving with candidate eliminations from
-pairs, Pointing, and Box-Line Reduction, alongside the immutable domain model,
-rule checks, mathematical solver, and seeded puzzle generation. Application
-features have not been implemented.
+puzzles. Phase 1.9 adds deterministic difficulty reports derived from human-style
+solving traces, alongside the immutable domain model, rule checks, mathematical
+solver, and seeded puzzle generation. Application features have not been
+implemented.
 
 ## Domain model
 
@@ -241,8 +241,79 @@ Its `solved` property derives from `LogicalSolveStatus`:
 contradictory starting states. The logical solver reports them as `CONTRADICTION`.
 These are local checks: an unsatisfiable puzzle without a detected contradiction
 can return `STUCK`. Mathematical solvability and uniqueness remain the existing
-solver's responsibility. Difficulty labels, scores, and generation filtering are
-not implemented.
+solver's responsibility. Difficulty analysis uses this trace and status;
+generation filtering is not implemented.
+
+## Difficulty rating
+
+```python
+from sudoku_gen.difficulty import Difficulty, rate_difficulty
+from sudoku_gen.models import Grid
+
+grid = Grid.from_string(
+    "530070000600195000098000060800060003400803001700020006060000280000419005000080079"
+)
+report = rate_difficulty(grid)
+assert report.difficulty is Difficulty.EASY
+assert report.score == 51  # 51 Naked Singles, without elimination steps.
+```
+
+`rate_difficulty(grid: Grid) -> DifficultyReport` calls `solve_logically()` exactly
+once and derives all metrics from that result. It uses neither clue count nor
+mathematical search depth, and does not invoke the mathematical solver or check
+uniqueness. `rate_logical_result(result: LogicalSolveResult) -> DifficultyReport`
+analyzes an existing trusted result without solving or replaying it. That helper
+trusts the supplied trace and status; a resumed solve rates only its recorded
+suffix. Use the original grid to rate a complete puzzle.
+
+`DifficultyReport` is immutable and hashable, with these fields:
+
+- `difficulty`: `EASY`, `MEDIUM`, `HARD`, `EXPERT`, or `UNRATED`.
+- `score`: integer trace effort under the formula below.
+- `hardest_technique`: highest explicit severity used, or `None` for zero steps.
+- `step_count`, `placement_count`, and `elimination_step_count`.
+- `candidate_elimination_count`: individual removals in elimination steps.
+- `logical_status`: the original `SOLVED`, `STUCK`, or `CONTRADICTION` status.
+
+Severity, step weights, and classification bands are explicit policy tables,
+independent of enum declaration order and technique detection priority:
+
+| Technique | Severity rank | Weight per step | Band when hardest used |
+| --- | --- | --- | --- |
+| Naked Single | 1 | 1 | Easy, subject to singles effort budget |
+| Hidden Single | 2 | 2 | Easy, subject to singles effort budget |
+| Naked Pair | 3 | 4 | Medium |
+| Hidden Pair | 4 | 5 | Hard |
+| Pointing | 5 | 6 | Hard |
+| Box-Line Reduction | 6 | 7 | Expert |
+
+The score is **sum of all step weights + candidate_elimination_count**. Every
+placement or elimination contributes one step weight, so longer traces already
+cost more. Each explicit candidate removal adds one point. Routine candidate
+updates caused by placements are not counted as elimination actions. For example,
+one Naked Pair step removing four candidates contributes one elimination step,
+four removals, and a score of `4 + 4 = 8`.
+
+Only `SOLVED` traces receive a normal classification. Their hardest technique
+sets the band in the table, with one complexity adjustment: singles-only traces
+scoring **at most 81 are Easy**, and those scoring **82 or more are Medium**.
+The initial Easy budget is one point per board cell, so all Naked-Single-only
+traces fit; longer traces relying on double-weight Hidden Singles can exceed it.
+This is a simple policy choice, not an empirically fitted threshold. Higher
+technique bands cannot be reduced by a short trace or low score. Score describes
+effort within the policy and does not globally order the difficulty labels.
+
+An already valid completed grid is Easy with score `0`, zero counts, and no
+hardest technique. `STUCK` and `CONTRADICTION` are always **Unrated**, preserving
+the score and metrics of any successful partial trace for diagnostics. A stuck
+puzzle is not automatically Expert and may be either unsupported or unsatisfiable.
+
+This is Sudoku Gen's first internal rating model. Identical grids produce
+identical reports for the same logical engine and rating policy. Ratings describe
+the deterministic trace actually selected, not proof that no easier solving path
+exists. They are not calibrated to commercial publishers or universal human
+difficulty; future calibration may adjust weights and thresholds. Reports are
+derived on demand and are not stored in `SudokuPuzzle`.
 
 ## Generation
 
@@ -283,8 +354,48 @@ The result may contain **more clues than the target**, but never fewer. Use
 puzzle with its solution.
 
 Generated puzzles are uniquely solvable; exact clue targets and minimal puzzles
-are not guaranteed. Clue count is not a difficulty rating. Difficulty scoring and
-clue-pattern symmetry are outside this phase.
+are not guaranteed. Clue count is not a difficulty rating. Rate the resulting
+grid separately, or use bounded targeted generation:
+
+```python
+from sudoku_gen.difficulty import Difficulty
+from sudoku_gen.generator import generate_puzzle_for_difficulty
+
+generated = generate_puzzle_for_difficulty(
+    Difficulty.MEDIUM, seed=2026, target_clues=30, max_attempts=100
+)
+assert generated.difficulty_report.difficulty is Difficulty.MEDIUM
+puzzle = generated.puzzle
+```
+
+`generate_puzzle_for_difficulty(difficulty, *, seed=None, target_clues=30,
+max_attempts=100) -> DifficultyGeneratedPuzzle` repeatedly composes the existing
+unique puzzle generator with `rate_difficulty()`. It accepts only `EASY`,
+`MEDIUM`, `HARD`, and `EXPERT`, and requires an exact match. `UNRATED` cannot be
+requested. The immutable result contains `puzzle`, the exact
+`difficulty_report` used to accept it, and the one-based `attempts` count.
+
+The search is always bounded. If no candidate matches in `max_attempts`, it raises
+`DifficultyGenerationError`, a `SudokuError`, whose message includes the requested
+difficulty and exhausted bound. It never returns a closest or final nonmatching
+candidate. `max_attempts` must be a built-in integer at least `1`; booleans and
+other types raise `TypeError`, and lower values raise `ValueError`.
+
+One local `Random(seed)` supplies a fresh random component for each candidate seed;
+the attempt number is encoded as well, so no attempt can repeat a candidate seed.
+Thus the same explicit seed, difficulty, target clues, attempt bound, and generator
+version traverse the same candidates and yield the same accepted result or bounded
+failure. It does not use or change Python's module-level random state. Individual
+candidate seeds are implementation details and are not exposed by the result.
+
+Target clue count and difficulty remain separate controls: the normal generator
+semantics still make `target_clues` a lower bound, and actual clues may be higher.
+Each candidate is generated once and rated once. A uniquely solvable candidate that
+the current human solver rates `UNRATED` simply does not match and consumes one
+attempt. Targeting `EASY` with `target_clues=81` can succeed because completed
+grids rate Easy with score zero; targeting a harder label at 81 naturally exhausts
+the bound. Generator filtering beyond this bounded exact-match API and clue-pattern
+symmetry are not implemented.
 
 ## Development setup
 
@@ -341,6 +452,12 @@ logs replay to the exact final grid, candidate sets, and status. State validatio
 tests cover immutable data and fabricated moves. Bounded seeded properties check
 clue and solution preservation, candidate subsets, and absence of candidate
 resurrection.
+Difficulty tests cover exact trace metrics, every technique and rating band,
+the singles effort boundary, partial unrated traces, real completed puzzles,
+one-solve accounting, repeatability, and bounded score/severity monotonicity.
+Targeted-generation tests cover exact matching for each normal difficulty,
+deterministic attempt progression, bounded exhaustion, single rating per candidate,
+global-random isolation, immutable results, and a real completed Easy generation.
 
 ## Repository layout
 
@@ -354,7 +471,8 @@ src/sudoku_gen/solver.py      Solving, capped counting, and uniqueness checks
 src/sudoku_gen/human_solver.py  Logical solving, checked actions, and state replay
 src/sudoku_gen/_logical_models.py  Immutable logical state and action records
 src/sudoku_gen/_logical_techniques.py  Pure single, pair, and box/line deductions
-src/sudoku_gen/generator.py   Seeded solution construction and puzzle carving
+src/sudoku_gen/difficulty.py  Explicit trace-based difficulty policy and reports
+src/sudoku_gen/generator.py   Seeded generation, carving, and bounded rating targeting
 tests/test_package.py        Package import smoke test
 tests/test_models.py         Domain model tests and serialization properties
 tests/test_validation.py     Sudoku rules, coordinates, and clue-removal property
@@ -367,6 +485,9 @@ tests/test_human_solver.py    Logical solving, replay, errors, and invariants
 tests/test_elimination_techniques.py  Pair and box/line deduction fixtures
 tests/test_logical_state.py   Candidate-state validation and replay compatibility
 tests/test_logical_replay.py  Mixed logs and candidate-preservation properties
+tests/test_difficulty.py     Exact metrics, classification boundaries, and properties
+tests/test_difficulty_puzzles.py  Real puzzle ratings and conservative status handling
+tests/test_difficulty_generation.py  Bounded exact-difficulty generation
 pyproject.toml               Package metadata, dev dependencies, tool configuration
 uv.lock                      Resolved dependency versions
 .python-version              Local Python version
