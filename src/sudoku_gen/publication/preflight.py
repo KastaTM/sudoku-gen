@@ -8,6 +8,7 @@ from math import isfinite
 from pypdf import PdfReader
 
 from sudoku_gen.publication.geometry import PhysicalPageSize
+from sudoku_gen.publication.interior import InteriorPlan
 from sudoku_gen.publication.pages import PagePlan
 from sudoku_gen.publication.render import Line, Text, VectorDrawing
 
@@ -321,6 +322,7 @@ def preflight_pdf(
     profile: PrintProfile = _DEFAULT_PRINT_PROFILE,
     drawings: tuple[VectorDrawing, ...] | None = None,
     page_plan: PagePlan | None = None,
+    interior_plan: InteriorPlan | None = None,
 ) -> PreflightReport:
     """Inspect PDF structure and optional original drawings without modifying either."""
     if not isinstance(pdf_bytes, bytes):
@@ -331,6 +333,10 @@ def preflight_pdf(
         raise TypeError("drawings must be a tuple of VectorDrawing instances or None.")
     if page_plan is not None and not isinstance(page_plan, PagePlan):
         raise TypeError("page_plan must be a PagePlan or None.")
+    if interior_plan is not None and not isinstance(interior_plan, InteriorPlan):
+        raise TypeError("interior_plan must be an InteriorPlan or None.")
+    if page_plan is not None and interior_plan is not None:
+        raise ValueError("Specify page_plan or interior_plan, not both.")
     try:
         reader = PdfReader(BytesIO(pdf_bytes))
     except Exception:
@@ -382,6 +388,16 @@ def preflight_pdf(
                 "PDF page count does not match the supplied PagePlan.",
                 actual=str(actual),
                 required=str(len(page_plan.pages)),
+            )
+        )
+    if interior_plan is not None and actual != interior_plan.physical_page_count:
+        issues.append(
+            _issue(
+                "INTERIOR_PLAN_COUNT",
+                PreflightSeverity.ERROR,
+                "PDF page count does not match the supplied InteriorPlan.",
+                actual=str(actual),
+                required=str(interior_plan.physical_page_count),
             )
         )
     for number, page in enumerate(reader.pages, start=1):

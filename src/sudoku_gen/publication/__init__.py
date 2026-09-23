@@ -1,5 +1,6 @@
 """Deterministic publication planning, geometry, and backend-neutral drawing."""
 
+from sudoku_gen.publication.front_render import render_front_matter_page
 from sudoku_gen.publication.geometry import (
     MILLIMETRES_PER_INCH,
     POINTS_PER_INCH,
@@ -11,6 +12,22 @@ from sudoku_gen.publication.geometry import (
     inches_to_points,
     layout_sudoku,
     millimetres_to_points,
+)
+from sudoku_gen.publication.interior import (
+    ContentsEntry,
+    ContentsPage,
+    CopyrightPage,
+    FrontMatterConfig,
+    FrontMatterPage,
+    InstructionsPage,
+    InteriorPlan,
+    PublicationMetadata,
+    TitlePage,
+    plan_interior,
+)
+from sudoku_gen.publication.interior_pdf import (
+    render_interior_drawings,
+    render_interior_pdf,
 )
 from sudoku_gen.publication.models import (
     BookPlan,
@@ -72,6 +89,13 @@ __all__ = (
     "BookPuzzle",
     "BookSection",
     "BookSectionInput",
+    "ContentsEntry",
+    "ContentsPage",
+    "CopyrightPage",
+    "FrontMatterConfig",
+    "FrontMatterPage",
+    "InstructionsPage",
+    "InteriorPlan",
     "Line",
     "MILLIMETRES_PER_INCH",
     "Page",
@@ -86,6 +110,7 @@ __all__ = (
     "PreflightIssue",
     "PreflightReport",
     "PreflightSeverity",
+    "PublicationMetadata",
     "PrintProfile",
     "PuzzlePage",
     "PuzzlePageGeometry",
@@ -101,6 +126,7 @@ __all__ = (
     "SudokuGridGeometry",
     "SudokuRenderStyle",
     "Text",
+    "TitlePage",
     "VectorDrawing",
     "VectorPrimitive",
     "build_book_plan",
@@ -111,6 +137,10 @@ __all__ = (
     "millimetres_to_points",
     "plan_book_pages",
     "preflight_pdf",
+    "plan_interior",
+    "render_front_matter_page",
+    "render_interior_drawings",
+    "render_interior_pdf",
     "render_sudoku",
     "render_puzzle_page",
     "render_book_drawings",

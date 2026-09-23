@@ -706,6 +706,18 @@ It writes the ignored `dev-output/phase-2.8-print-ready-preview.pdf`. Preflight 
 the preview are local diagnostics; final interiors still require KDP Print Previewer
 validation.
 
+Phase 2.9 adds immutable `PublicationMetadata`, `FrontMatterConfig`, and
+`InteriorPlan`. `plan_interior()` places optional title, copyright, instructions,
+and contents pages before an unchanged `PagePlan`. Editorial page numbers remain on
+puzzle and solution pages; physical PDF position includes front matter and governs
+mirrored KDP margins. `render_interior_drawings()` and `render_interior_pdf()` use
+the existing vector/PDF backend, carry supplied title and author into PDF metadata,
+and accept `print_profile=PrintProfile()` for print-safe margins. The contents page
+uses each existing section's first puzzle-page lookup and may show the same printed
+page number for adjacent sections. Long front-matter text is rejected rather than
+clipped. Run `uv run python scripts/create_phase_2_9_preview.py` to create the
+ignored 28-page PDF plus SVG previews of the front matter and first puzzle page.
+
 ## Development setup
 
 Install Python 3.12+ and `uv`, then run from the repository root:
