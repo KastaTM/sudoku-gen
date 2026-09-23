@@ -36,6 +36,7 @@ from sudoku_gen.publication.pages import (
     SolutionPageItem,
     plan_book_pages,
 )
+from sudoku_gen.publication.pdf import render_book_pdf, render_pdf
 from sudoku_gen.publication.render import (
     Line,
     SudokuRenderStyle,
@@ -92,6 +93,8 @@ __all__ = (
     "plan_book_pages",
     "render_sudoku",
     "render_puzzle_page",
+    "render_book_pdf",
+    "render_pdf",
     "render_solution_page",
     "render_svg",
 )

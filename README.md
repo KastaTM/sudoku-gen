@@ -661,6 +661,16 @@ pages. The `SOLUCIONES` header and footer retain the existing `SolutionPage`
 number. These drawings are also passed directly to `render_svg()`; PDF output is
 still outside the current scope.
 
+Phase 2.6 adds a direct vector PDF backend using ReportLab. `render_pdf()` converts
+ordered `VectorDrawing` pages to in-memory PDF bytes, translating the established
+top-left coordinate system into PDF's bottom-left coordinates while keeping text
+upright and centered with font metrics. `render_book_pdf()` renders each existing
+`PagePlan` page in order, validates matching physical sizes and abstract/physical
+capacities, and emits puzzle pages followed by solution pages without inserting
+blank pages. The prototype uses standard Helvetica, minimal caller-supplied title
+and optional author metadata, and ReportLab invariant mode for deterministic bytes.
+It does not yet perform print-provider preflight or create front matter.
+
 ## Development setup
 
 Install Python 3.12+ and `uv`, then run from the repository root:
