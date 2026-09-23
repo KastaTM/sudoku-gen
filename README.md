@@ -626,6 +626,32 @@ global puzzle number. `PagePlan` contains no physical dimensions, coordinates,
 fonts, drawing instructions, or PDF behavior; a later renderer maps these abstract
 slots onto physical pages.
 
+Phase 2.3 adds physical geometry and single-grid rendering, still without drawing
+complete book pages or producing PDFs. Points are the canonical physical unit:
+72 points per inch. `inches_to_points()` and `millimetres_to_points()` provide
+explicit conversions, while `PhysicalPageSize` supplies arbitrary point sizes and
+common 6 by 9 inch, US Letter, and A4 constructors.
+
+`layout_sudoku(Rect(...))` fits the largest centered square in a positive target
+rectangle and derives its cells, centers, and major/minor line positions. Geometry
+uses a top-left origin with x increasing rightward and y increasing downward.
+`render_sudoku()` turns a `Grid` and physical rectangle into backend-neutral
+`VectorDrawing` primitives; line widths and digit sizes are ratios of cell size, so
+the same style scales proportionally at every physical size. `render_svg()` is the
+first backend and emits deterministic self-contained SVG. A PDF backend and full
+page rendering are not implemented yet.
+
+Phase 2.4 maps an abstract `PuzzlePage` to a complete physical vector page through
+`PhysicalPageLayout`, `layout_puzzle_page()`, and `render_puzzle_page()`. The
+default layout is a restrained 6 by 9 inch, two-puzzle page. It reserves margins,
+header and footer bands, and vertically allocates the configured slot capacity;
+partial final pages keep their assigned slot positions and leave lower unused slots
+blank. Each slot receives a centered square Sudoku grid, a `Sudoku #...` label,
+and an optional per-puzzle difficulty label. The header is `SUDOKUS`, while the
+footer uses the existing `PuzzlePage.page_number`. The resulting `VectorDrawing`
+works with `render_svg()`; PDF output, solution-page rendering, and publisher
+margin policies remain future work.
+
 ## Development setup
 
 Install Python 3.12+ and `uv`, then run from the repository root:

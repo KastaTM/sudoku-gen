@@ -1,11 +1,30 @@
-"""Deterministic editorial content models, without page planning or rendering."""
+"""Deterministic publication planning, geometry, and backend-neutral drawing."""
 
+from sudoku_gen.publication.geometry import (
+    MILLIMETRES_PER_INCH,
+    POINTS_PER_INCH,
+    PhysicalPageSize,
+    Point,
+    Rect,
+    Size,
+    SudokuGridGeometry,
+    inches_to_points,
+    layout_sudoku,
+    millimetres_to_points,
+)
 from sudoku_gen.publication.models import (
     BookPlan,
     BookPuzzle,
     BookSection,
     BookSectionInput,
     build_book_plan,
+)
+from sudoku_gen.publication.page_render import (
+    PhysicalPageLayout,
+    PuzzlePageGeometry,
+    PuzzleSlotGeometry,
+    layout_puzzle_page,
+    render_puzzle_page,
 )
 from sudoku_gen.publication.pages import (
     Page,
@@ -17,19 +36,50 @@ from sudoku_gen.publication.pages import (
     SolutionPageItem,
     plan_book_pages,
 )
+from sudoku_gen.publication.render import (
+    Line,
+    SudokuRenderStyle,
+    Text,
+    VectorDrawing,
+    VectorPrimitive,
+    render_sudoku,
+    render_svg,
+)
 
 __all__ = (
     "BookPlan",
     "BookPuzzle",
     "BookSection",
     "BookSectionInput",
+    "Line",
+    "MILLIMETRES_PER_INCH",
     "Page",
     "PageLayoutProfile",
     "PagePlan",
+    "POINTS_PER_INCH",
+    "PhysicalPageLayout",
+    "PhysicalPageSize",
+    "Point",
     "PuzzlePage",
+    "PuzzlePageGeometry",
     "PuzzlePageItem",
+    "PuzzleSlotGeometry",
+    "Rect",
+    "Size",
     "SolutionPage",
     "SolutionPageItem",
+    "SudokuGridGeometry",
+    "SudokuRenderStyle",
+    "Text",
+    "VectorDrawing",
+    "VectorPrimitive",
     "build_book_plan",
+    "inches_to_points",
+    "layout_sudoku",
+    "layout_puzzle_page",
+    "millimetres_to_points",
     "plan_book_pages",
+    "render_sudoku",
+    "render_puzzle_page",
+    "render_svg",
 )
