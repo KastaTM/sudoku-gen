@@ -1,5 +1,19 @@
 """Deterministic publication planning, geometry, and backend-neutral drawing."""
 
+from sudoku_gen.publication.cover import (
+    CoverContent,
+    CoverGeometry,
+    CoverIssue,
+    CoverPlan,
+    CoverReport,
+    CoverStyle,
+    cover_geometry,
+    plan_cover,
+    plan_paperback_cover,
+    render_cover_drawing,
+    render_cover_pdf,
+    validate_cover_pdf,
+)
 from sudoku_gen.publication.front_render import render_front_matter_page
 from sudoku_gen.publication.geometry import (
     MILLIMETRES_PER_INCH,
@@ -92,6 +106,12 @@ __all__ = (
     "ContentsEntry",
     "ContentsPage",
     "CopyrightPage",
+    "CoverContent",
+    "CoverGeometry",
+    "CoverIssue",
+    "CoverPlan",
+    "CoverReport",
+    "CoverStyle",
     "FrontMatterConfig",
     "FrontMatterPage",
     "InstructionsPage",
@@ -130,6 +150,7 @@ __all__ = (
     "VectorDrawing",
     "VectorPrimitive",
     "build_book_plan",
+    "cover_geometry",
     "inches_to_points",
     "layout_sudoku",
     "layout_puzzle_page",
@@ -138,6 +159,10 @@ __all__ = (
     "plan_book_pages",
     "preflight_pdf",
     "plan_interior",
+    "plan_cover",
+    "plan_paperback_cover",
+    "render_cover_drawing",
+    "render_cover_pdf",
     "render_front_matter_page",
     "render_interior_drawings",
     "render_interior_pdf",
@@ -148,4 +173,5 @@ __all__ = (
     "render_pdf",
     "render_solution_page",
     "render_svg",
+    "validate_cover_pdf",
 )

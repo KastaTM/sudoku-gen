@@ -718,6 +718,17 @@ page number for adjacent sections. Long front-matter text is rejected rather tha
 clipped. Run `uv run python scripts/create_phase_2_9_preview.py` to create the
 ignored 28-page PDF plus SVG previews of the front matter and first puzzle page.
 
+Phase 2.10 adds `plan_paperback_cover()` for a single continuous 6 by 9-inch KDP
+paperback cover. It inspects the finalized interior PDF, applies the profile's
+effective page count, and calculates the white-paper black-and-white spine as
+`effective_pages × 0.002252` inches. `CoverContent` accepts only caller-authored
+back-cover copy and optional spine text; KDP's lower-right barcode region is reserved
+but no barcode is generated. Spine text requires at least 80 effective pages and a
+measured fit. `render_cover_pdf()` emits a one-page embedded-font vector PDF and
+`validate_cover_pdf()` performs focused local checks. Regenerate the cover whenever
+the interior page count changes, then compare it with KDP's cover calculator and
+template before submission.
+
 ## Development setup
 
 Install Python 3.12+ and `uv`, then run from the repository root:
