@@ -45,6 +45,13 @@ from sudoku_gen.publication.render import (
     render_sudoku,
     render_svg,
 )
+from sudoku_gen.publication.solution_render import (
+    SolutionPageGeometry,
+    SolutionPageLayout,
+    SolutionSlotGeometry,
+    layout_solution_page,
+    render_solution_page,
+)
 
 __all__ = (
     "BookPlan",
@@ -67,7 +74,10 @@ __all__ = (
     "Rect",
     "Size",
     "SolutionPage",
+    "SolutionPageGeometry",
     "SolutionPageItem",
+    "SolutionPageLayout",
+    "SolutionSlotGeometry",
     "SudokuGridGeometry",
     "SudokuRenderStyle",
     "Text",
@@ -77,9 +87,11 @@ __all__ = (
     "inches_to_points",
     "layout_sudoku",
     "layout_puzzle_page",
+    "layout_solution_page",
     "millimetres_to_points",
     "plan_book_pages",
     "render_sudoku",
     "render_puzzle_page",
+    "render_solution_page",
     "render_svg",
 )

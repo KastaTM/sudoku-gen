@@ -652,6 +652,15 @@ footer uses the existing `PuzzlePage.page_number`. The resulting `VectorDrawing`
 works with `render_svg()`; PDF output, solution-page rendering, and publisher
 margin policies remain future work.
 
+Phase 2.5 adds `SolutionPageLayout`, `layout_solution_page()`, and
+`render_solution_page()` for the solution half of a book interior. The default
+6 by 9 inch layout uses two columns and three rows for six row-major solutions per
+page. Each slot preserves its global puzzle number, renders `Solución #...` above
+the stored completed grid, and reserves the configured capacity on partial final
+pages. The `SOLUCIONES` header and footer retain the existing `SolutionPage`
+number. These drawings are also passed directly to `render_svg()`; PDF output is
+still outside the current scope.
+
 ## Development setup
 
 Install Python 3.12+ and `uv`, then run from the repository root:
