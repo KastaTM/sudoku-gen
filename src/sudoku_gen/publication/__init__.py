@@ -36,7 +36,20 @@ from sudoku_gen.publication.pages import (
     SolutionPageItem,
     plan_book_pages,
 )
-from sudoku_gen.publication.pdf import render_book_pdf, render_pdf
+from sudoku_gen.publication.pdf import (
+    PDF_FONT_NAME,
+    render_book_drawings,
+    render_book_pdf,
+    render_pdf,
+)
+from sudoku_gen.publication.preflight import (
+    PageMargins,
+    PreflightIssue,
+    PreflightReport,
+    PreflightSeverity,
+    PrintProfile,
+    preflight_pdf,
+)
 from sudoku_gen.publication.render import (
     Line,
     SudokuRenderStyle,
@@ -62,12 +75,18 @@ __all__ = (
     "Line",
     "MILLIMETRES_PER_INCH",
     "Page",
+    "PageMargins",
     "PageLayoutProfile",
     "PagePlan",
     "POINTS_PER_INCH",
+    "PDF_FONT_NAME",
     "PhysicalPageLayout",
     "PhysicalPageSize",
     "Point",
+    "PreflightIssue",
+    "PreflightReport",
+    "PreflightSeverity",
+    "PrintProfile",
     "PuzzlePage",
     "PuzzlePageGeometry",
     "PuzzlePageItem",
@@ -91,8 +110,10 @@ __all__ = (
     "layout_solution_page",
     "millimetres_to_points",
     "plan_book_pages",
+    "preflight_pdf",
     "render_sudoku",
     "render_puzzle_page",
+    "render_book_drawings",
     "render_book_pdf",
     "render_pdf",
     "render_solution_page",

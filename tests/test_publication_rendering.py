@@ -173,15 +173,18 @@ def test_full_grid_has_one_text_primitive_per_cell_and_preserves_grid() -> None:
     assert SOLUTION.cells == original_cells
 
 
-def test_rendering_scales_all_dimensionless_style_measurements() -> None:
+def test_rendering_scales_proportional_measurements_above_print_safe_floors() -> None:
     small = render_sudoku(Grid((0,) * 81), Rect(0, 0, 180, 180))
     large = render_sudoku(Grid((0,) * 81), Rect(0, 0, 360, 360))
     small_lines = drawing_primitives(small, Line)
     large_lines = drawing_primitives(large, Line)
+    style = SudokuRenderStyle()
 
     assert large_lines[1].start.x == small_lines[1].start.x * 2
-    assert large_lines[0].stroke_width == small_lines[0].stroke_width * 2
-    assert large_lines[1].stroke_width == small_lines[1].stroke_width * 2
+    assert small_lines[0].stroke_width == style.minimum_major_line_width
+    assert small_lines[1].stroke_width == style.minimum_minor_line_width
+    assert large_lines[0].stroke_width == 2.4
+    assert large_lines[1].stroke_width == 1.0
 
 
 @pytest.mark.parametrize(

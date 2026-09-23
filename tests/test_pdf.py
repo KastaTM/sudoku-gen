@@ -11,6 +11,7 @@ from sudoku_gen.fingerprint import FingerprintMode, fingerprint_puzzle
 from sudoku_gen.human_solver import LogicalSolveStatus
 from sudoku_gen.models import Grid, SudokuPuzzle
 from sudoku_gen.publication import (
+    PDF_FONT_NAME,
     BookPlan,
     BookPuzzle,
     BookSection,
@@ -107,13 +108,13 @@ def test_pdf_coordinate_transform_keeps_lines_and_text_upright_and_centered() ->
         )
     )
     text, matrix, size = next(item for item in observations if item[0].strip())
-    ascent, descent = pdfmetrics.getAscentDescent("Helvetica", 12)
+    ascent, descent = pdfmetrics.getAscentDescent(PDF_FONT_NAME, 12)
 
     assert "10 180 m 20 170 l S" in content
     assert text.strip() == "AB"
     assert size == 12
     assert matrix[4] == pytest.approx(
-        50 - pdfmetrics.stringWidth("AB", "Helvetica", 12) / 2
+        50 - pdfmetrics.stringWidth("AB", PDF_FONT_NAME, 12) / 2
     )
     assert matrix[5] == pytest.approx(160 - (ascent + descent) / 2, abs=0.001)
 

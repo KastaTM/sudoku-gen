@@ -667,9 +667,44 @@ top-left coordinate system into PDF's bottom-left coordinates while keeping text
 upright and centered with font metrics. `render_book_pdf()` renders each existing
 `PagePlan` page in order, validates matching physical sizes and abstract/physical
 capacities, and emits puzzle pages followed by solution pages without inserting
-blank pages. The prototype uses standard Helvetica, minimal caller-supplied title
-and optional author metadata, and ReportLab invariant mode for deterministic bytes.
-It does not yet perform print-provider preflight or create front matter.
+blank pages. The backend accepts minimal caller-supplied title and optional author
+metadata, and uses ReportLab invariant mode for deterministic bytes. It does not
+create front matter.
+
+Phase 2.7 adds `preflight_pdf()` for diagnostic-only local print preflight. The
+initial `PrintProfile` supports 6 by 9 inch, black-and-white, white-paper,
+no-bleed paperbacks using KDP's 24â€“828 effective-page range, published
+inside-margin bands, and 0.25-inch outside/top/bottom safe margins. Reports contain
+stable error, warning, and information diagnostics; only errors block preflight.
+PDF-only inspection covers readability, encryption, page dimensions, annotations,
+font embedding, and page structure. Passing original `VectorDrawing` pages enables
+additional safe-area, stroke-width, and text-size checks, including recto/verso
+inside margins. A local pass is not an approval guarantee: every final manuscript
+must still be checked in Amazon KDP's Print Previewer.
+
+Phase 2.8 makes the supported 6 by 9 inch, no-bleed paperback interior print-safe.
+`SudokuRenderStyle` keeps proportional strokes while applying 0.75-point minor and
+1.25-point major minimums. The PDF backend embeds the bundled Bitstream Vera
+TrueType font under its included redistribution license, including Spanish text;
+the backend-neutral SVG `Text` representation remains unchanged. `PrintProfile`
+now exposes `PageMargins` for physical recto/verso positions. Pass
+`print_profile=PrintProfile()` to `render_book_drawings()` or `render_book_pdf()`
+to apply its page-count-dependent inside margin, alternating inside/outside sides,
+and sufficient clearance for stroke extents. Physical PDF position, rather than the
+printed editorial page number, determines parity. `render_book_drawings()` exposes
+the source drawings for geometry preflight. The renderer does not add padding or
+blank pages, so callers remain responsible for providing a book within the
+publisher's page-count range.
+
+Generate the controlled 24-page development interior with:
+
+```sh
+uv run python scripts/create_phase_2_8_preview.py
+```
+
+It writes the ignored `dev-output/phase-2.8-print-ready-preview.pdf`. Preflight and
+the preview are local diagnostics; final interiors still require KDP Print Previewer
+validation.
 
 ## Development setup
 
@@ -680,7 +715,7 @@ uv sync --locked
 ```
 
 This creates `.venv`, installs `sudoku_gen` in editable mode, and installs pytest,
-pytest-cov, Hypothesis, Ruff, and mypy. There are no runtime dependencies.
+pytest-cov, Hypothesis, Ruff, and mypy. Runtime PDF support uses ReportLab and pypdf.
 The existing `uv_build` backend handles package installation and builds.
 `.python-version` selects Python 3.12 for local development; `uv.lock` records the
 resolved dependency versions and should be committed.

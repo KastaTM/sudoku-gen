@@ -95,19 +95,49 @@ class SudokuRenderStyle:
 
     minor_line_width_ratio: float = 0.025
     major_line_width_ratio: float = 0.06
+    minimum_minor_line_width: float = 0.75
+    minimum_major_line_width: float = 1.25
     digit_font_size_ratio: float = 0.6
 
     def __post_init__(self) -> None:
         minor = _positive_number(self.minor_line_width_ratio, "minor_line_width_ratio")
         major = _positive_number(self.major_line_width_ratio, "major_line_width_ratio")
+        minimum_minor = _positive_number(
+            self.minimum_minor_line_width, "minimum_minor_line_width"
+        )
+        minimum_major = _positive_number(
+            self.minimum_major_line_width, "minimum_major_line_width"
+        )
         digit = _positive_number(self.digit_font_size_ratio, "digit_font_size_ratio")
         if major <= minor:
             raise ValueError(
                 "major_line_width_ratio must exceed minor_line_width_ratio."
             )
+        if minimum_major <= minimum_minor:
+            raise ValueError(
+                "minimum_major_line_width must exceed minimum_minor_line_width."
+            )
         object.__setattr__(self, "minor_line_width_ratio", minor)
         object.__setattr__(self, "major_line_width_ratio", major)
+        object.__setattr__(self, "minimum_minor_line_width", minimum_minor)
+        object.__setattr__(self, "minimum_major_line_width", minimum_major)
         object.__setattr__(self, "digit_font_size_ratio", digit)
+
+    def line_width(self, cell_size: float, *, is_major: bool) -> float:
+        """Return a print-safe line width for one cell size and line class."""
+        cell = _positive_number(cell_size, "cell_size")
+        if type(is_major) is not bool:
+            raise TypeError("is_major must be a bool.")
+        if is_major:
+            return max(
+                cell * self.major_line_width_ratio,
+                self.minimum_major_line_width,
+            )
+        return max(cell * self.minor_line_width_ratio, self.minimum_minor_line_width)
+
+    def maximum_line_width(self, cell_size: float) -> float:
+        """Return the major-line width, the largest stroke at this cell size."""
+        return self.line_width(cell_size, is_major=True)
 
 
 _DEFAULT_SUDOKU_RENDER_STYLE = SudokuRenderStyle()
@@ -135,11 +165,7 @@ def render_sudoku(
             Line(
                 Point(x, geometry.outer_square.top),
                 Point(x, geometry.outer_square.bottom),
-                (
-                    geometry.cell_size * style.major_line_width_ratio
-                    if is_major
-                    else geometry.cell_size * style.minor_line_width_ratio
-                ),
+                style.line_width(geometry.cell_size, is_major=is_major),
                 is_major,
             )
         )
@@ -149,11 +175,7 @@ def render_sudoku(
             Line(
                 Point(geometry.outer_square.left, y),
                 Point(geometry.outer_square.right, y),
-                (
-                    geometry.cell_size * style.major_line_width_ratio
-                    if is_major
-                    else geometry.cell_size * style.minor_line_width_ratio
-                ),
+                style.line_width(geometry.cell_size, is_major=is_major),
                 is_major,
             )
         )

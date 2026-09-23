@@ -1,9 +1,11 @@
 """Vector PDF backend and complete PagePlan book-interior export."""
 
 from collections.abc import Iterable
+from importlib.resources import files
 from io import BytesIO
 
 from reportlab.pdfbase import pdfmetrics  # type: ignore[import-untyped]
+from reportlab.pdfbase.ttfonts import TTFont  # type: ignore[import-untyped]
 from reportlab.pdfgen import canvas as reportlab_canvas  # type: ignore[import-untyped]
 
 from sudoku_gen.publication.page_render import (
@@ -11,6 +13,7 @@ from sudoku_gen.publication.page_render import (
     render_puzzle_page,
 )
 from sudoku_gen.publication.pages import PagePlan, PuzzlePage, SolutionPage
+from sudoku_gen.publication.preflight import PrintProfile
 from sudoku_gen.publication.render import (
     Line,
     SudokuRenderStyle,
@@ -22,9 +25,18 @@ from sudoku_gen.publication.solution_render import (
     render_solution_page,
 )
 
-_PDF_FONT = "Helvetica"
+PDF_FONT_NAME = "SudokuGenVera"
 _DEFAULT_PUZZLE_LAYOUT = PhysicalPageLayout()
 _DEFAULT_SOLUTION_LAYOUT = SolutionPageLayout()
+
+
+def _ensure_pdf_font() -> None:
+    """Register the bundled Bitstream Vera TrueType font once per process."""
+    if PDF_FONT_NAME in pdfmetrics.getRegisteredFontNames():
+        return
+    path = files("sudoku_gen.publication").joinpath("assets", "Vera.ttf")
+    # TTFont needs a filesystem path; packaged source installs retain this asset.
+    pdfmetrics.registerFont(TTFont(PDF_FONT_NAME, str(path)))
 
 
 def _validate_metadata(value: str | None, name: str, *, optional: bool) -> None:
@@ -57,8 +69,8 @@ def _draw_line(pdf_canvas: object, drawing: VectorDrawing, line: Line) -> None:
 
 def _draw_text(pdf_canvas: object, drawing: VectorDrawing, text: Text) -> None:
     pdf_canvas.setFillColorRGB(0, 0, 0)  # type: ignore[attr-defined]
-    pdf_canvas.setFont(_PDF_FONT, text.font_size)  # type: ignore[attr-defined]
-    ascent, descent = pdfmetrics.getAscentDescent(_PDF_FONT, text.font_size)
+    pdf_canvas.setFont(PDF_FONT_NAME, text.font_size)  # type: ignore[attr-defined]
+    ascent, descent = pdfmetrics.getAscentDescent(PDF_FONT_NAME, text.font_size)
     baseline = _pdf_y(drawing, text.position.y) - (ascent + descent) / 2
     pdf_canvas.drawCentredString(  # type: ignore[attr-defined]
         _pdf_x(drawing, text.position.x), baseline, text.content
@@ -81,6 +93,7 @@ def render_pdf(
         raise ValueError("drawings must contain at least one VectorDrawing.")
     if not all(isinstance(drawing, VectorDrawing) for drawing in pages):
         raise TypeError("drawings must contain only VectorDrawing instances.")
+    _ensure_pdf_font()
 
     buffer = BytesIO()
     first = pages[0].bounds
@@ -90,6 +103,7 @@ def render_pdf(
         bottomup=1,
         pageCompression=0,
         invariant=1,
+        initialFontName=PDF_FONT_NAME,
     )
     pdf_canvas.setTitle(title)
     pdf_canvas.setProducer(producer)
@@ -111,16 +125,15 @@ def render_pdf(
     return buffer.getvalue()
 
 
-def render_book_pdf(
+def render_book_drawings(
     page_plan: PagePlan,
     *,
     puzzle_layout: PhysicalPageLayout = _DEFAULT_PUZZLE_LAYOUT,
     solution_layout: SolutionPageLayout = _DEFAULT_SOLUTION_LAYOUT,
     sudoku_style: SudokuRenderStyle | None = None,
-    title: str = "Sudoku Gen",
-    author: str | None = None,
-) -> bytes:
-    """Render every planned puzzle and solution page in exact PagePlan order."""
+    print_profile: PrintProfile | None = None,
+) -> tuple[VectorDrawing, ...]:
+    """Render planned pages with optional KDP-aware mirrored physical margins."""
     if not isinstance(page_plan, PagePlan):
         raise TypeError("page_plan must be a PagePlan.")
     if not isinstance(puzzle_layout, PhysicalPageLayout):
@@ -129,6 +142,8 @@ def render_book_pdf(
         raise TypeError("solution_layout must be a SolutionPageLayout.")
     if sudoku_style is not None and not isinstance(sudoku_style, SudokuRenderStyle):
         raise TypeError("sudoku_style must be a SudokuRenderStyle or None.")
+    if print_profile is not None and not isinstance(print_profile, PrintProfile):
+        raise TypeError("print_profile must be a PrintProfile or None.")
     if puzzle_layout.page_size != solution_layout.page_size:
         raise ValueError("Puzzle and solution layouts must use the same page size.")
     if puzzle_layout.puzzles_per_page != page_plan.layout.puzzles_per_page:
@@ -136,14 +151,32 @@ def render_book_pdf(
     if solution_layout.solutions_per_page != page_plan.layout.solutions_per_page:
         raise ValueError("Solution physical capacity must match the PagePlan capacity.")
 
+    if print_profile is not None and puzzle_layout.page_size != print_profile.trim_size:
+        raise ValueError("Print profile trim size must match the physical page size.")
+    style = sudoku_style or SudokuRenderStyle()
+    effective_count = (
+        print_profile.effective_page_count(len(page_plan.pages))
+        if print_profile is not None
+        else None
+    )
+    max_stroke_width = style.maximum_line_width(puzzle_layout.page_size.width / 9)
+
     drawings: list[VectorDrawing] = []
-    for page in page_plan.pages:
+    for physical_page_number, page in enumerate(page_plan.pages, start=1):
+        margins = (
+            print_profile.page_margins(
+                effective_count, physical_page_number
+            ).with_stroke_clearance(max_stroke_width)
+            if print_profile is not None and effective_count is not None
+            else None
+        )
         if isinstance(page, PuzzlePage):
             drawings.append(
                 render_puzzle_page(
                     page,
                     puzzle_layout,
-                    sudoku_style=sudoku_style,
+                    sudoku_style=style,
+                    margins=margins,
                 )
             )
         elif isinstance(page, SolutionPage):
@@ -151,9 +184,35 @@ def render_book_pdf(
                 render_solution_page(
                     page,
                     solution_layout,
-                    sudoku_style=sudoku_style,
+                    sudoku_style=style,
+                    margins=margins,
                 )
             )
         else:
             raise TypeError(f"Unsupported planned page: {type(page).__name__}.")
-    return render_pdf(drawings, title=title, author=author, producer="Sudoku Gen")
+    return tuple(drawings)
+
+
+def render_book_pdf(
+    page_plan: PagePlan,
+    *,
+    puzzle_layout: PhysicalPageLayout = _DEFAULT_PUZZLE_LAYOUT,
+    solution_layout: SolutionPageLayout = _DEFAULT_SOLUTION_LAYOUT,
+    sudoku_style: SudokuRenderStyle | None = None,
+    print_profile: PrintProfile | None = None,
+    title: str = "Sudoku Gen",
+    author: str | None = None,
+) -> bytes:
+    """Render every planned puzzle and solution page in exact PagePlan order."""
+    return render_pdf(
+        render_book_drawings(
+            page_plan,
+            puzzle_layout=puzzle_layout,
+            solution_layout=solution_layout,
+            sudoku_style=sudoku_style,
+            print_profile=print_profile,
+        ),
+        title=title,
+        author=author,
+        producer="Sudoku Gen",
+    )

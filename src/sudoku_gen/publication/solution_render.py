@@ -11,6 +11,7 @@ from sudoku_gen.publication.geometry import (
     layout_sudoku,
 )
 from sudoku_gen.publication.pages import SolutionPage, SolutionPageItem
+from sudoku_gen.publication.preflight import PageMargins
 from sudoku_gen.publication.render import (
     SudokuRenderStyle,
     Text,
@@ -107,12 +108,25 @@ class SolutionPageLayout:
 
     @property
     def usable_rect(self) -> Rect:
+        """Return the legacy symmetric drawable rectangle for standalone rendering."""
         return Rect(
             self.left_margin,
             self.top_margin,
             self.page_size.width - self.left_margin - self.right_margin,
             self.page_size.height - self.top_margin - self.bottom_margin,
         )
+
+    def usable_rect_for(self, margins: PageMargins | None = None) -> Rect:
+        """Return a drawable rectangle using optional physical recto/verso margins."""
+        if margins is None:
+            return self.usable_rect
+        if not isinstance(margins, PageMargins):
+            raise TypeError("margins must be a PageMargins or None.")
+        width = self.page_size.width - margins.left - margins.right
+        height = self.page_size.height - margins.top - margins.bottom
+        if width <= 0 or height <= 0:
+            raise ValueError("Physical margins leave no drawable page area.")
+        return Rect(margins.left, margins.top, width, height)
 
 
 _DEFAULT_SOLUTION_PAGE_LAYOUT = SolutionPageLayout()
@@ -155,6 +169,7 @@ class SolutionPageGeometry:
     footer_rect: Rect
     solution_area_rect: Rect
     slots: tuple[SolutionSlotGeometry, ...]
+    margins: PageMargins | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.page, SolutionPage):
@@ -165,6 +180,8 @@ class SolutionPageGeometry:
             raise TypeError("slots must be a tuple of SolutionSlotGeometry instances.")
         if tuple(slot.item for slot in self.slots) != self.page.items:
             raise ValueError("Slot geometry must preserve the page's item order.")
+        if self.margins is not None and not isinstance(self.margins, PageMargins):
+            raise TypeError("margins must be a PageMargins or None.")
 
     def slot_for_number(self, number: int) -> SolutionSlotGeometry:
         """Return the physical slot for a global puzzle number on this page."""
@@ -188,6 +205,8 @@ def _contains(outer: Rect, inner: Rect) -> bool:
 def layout_solution_page(
     page: SolutionPage,
     physical_layout: SolutionPageLayout = _DEFAULT_SOLUTION_PAGE_LAYOUT,
+    *,
+    margins: PageMargins | None = None,
 ) -> SolutionPageGeometry:
     """Map abstract solution slots to a fixed row-major physical grid."""
     if not isinstance(page, SolutionPage):
@@ -199,7 +218,7 @@ def layout_solution_page(
             "Solution page exceeds the configured solutions_per_page capacity."
         )
 
-    usable_rect = physical_layout.usable_rect
+    usable_rect = physical_layout.usable_rect_for(margins)
     header_rect = Rect(
         usable_rect.left,
         usable_rect.top,
@@ -277,6 +296,7 @@ def layout_solution_page(
         footer_rect,
         solution_area_rect,
         tuple(slots),
+        margins,
     )
 
 
@@ -292,9 +312,10 @@ def render_solution_page(
     physical_layout: SolutionPageLayout = _DEFAULT_SOLUTION_PAGE_LAYOUT,
     *,
     sudoku_style: SudokuRenderStyle | None = None,
+    margins: PageMargins | None = None,
 ) -> VectorDrawing:
     """Render a complete physical solution page with solved Sudoku grids."""
-    geometry = layout_solution_page(page, physical_layout)
+    geometry = layout_solution_page(page, physical_layout, margins=margins)
     if sudoku_style is not None and not isinstance(sudoku_style, SudokuRenderStyle):
         raise TypeError("sudoku_style must be a SudokuRenderStyle or None.")
     primitives: list[VectorPrimitive] = [
