@@ -73,6 +73,15 @@ from sudoku_gen.publication.pdf import (
     render_book_pdf,
     render_pdf,
 )
+from sudoku_gen.publication.pipeline import (
+    PublicationJob,
+    PublicationResult,
+    PublicationSectionSpec,
+    export_publication,
+    publication_manifest,
+    run_publication,
+    section_seed,
+)
 from sudoku_gen.publication.preflight import (
     PageMargins,
     PreflightIssue,
@@ -131,6 +140,9 @@ __all__ = (
     "PreflightReport",
     "PreflightSeverity",
     "PublicationMetadata",
+    "PublicationJob",
+    "PublicationResult",
+    "PublicationSectionSpec",
     "PrintProfile",
     "PuzzlePage",
     "PuzzlePageGeometry",
@@ -158,6 +170,10 @@ __all__ = (
     "millimetres_to_points",
     "plan_book_pages",
     "preflight_pdf",
+    "export_publication",
+    "publication_manifest",
+    "run_publication",
+    "section_seed",
     "plan_interior",
     "plan_cover",
     "plan_paperback_cover",
