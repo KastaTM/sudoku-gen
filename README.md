@@ -569,6 +569,166 @@ grids rate Easy with score zero; targeting a harder label at 81 naturally exhaus
 the bound. Generator filtering beyond this bounded exact-match API and clue-pattern
 symmetry are not implemented.
 
+## Publication content plans
+
+Phase 2.1 adds an editorial domain layer in `sudoku_gen.publication`. It assembles
+trusted generated batches into deterministic book content; it does not plan pages,
+serialize plans, or render PDF files.
+
+```python
+from sudoku_gen.publication import BookSectionInput, build_book_plan
+
+plan = build_book_plan(
+    (
+        BookSectionInput("Easy", easy_batch),
+        BookSectionInput("Hard", hard_batch),
+    )
+)
+assert tuple(puzzle.number for puzzle in plan.puzzles) == tuple(
+    range(1, plan.total_puzzle_count + 1)
+)
+```
+
+`BookPuzzle` references an existing `SudokuPuzzle`, its trusted difficulty report,
+and a book-mode fingerprint; it requires a stored solution. `BookSection` preserves
+the caller's title and batch order, and only accepts one normal publishable
+difficulty. `BookPlan` preserves section order and assigns numbering globally
+across section boundaries.
+
+`build_book_plan()` defaults to `FingerprintMode.DIGIT_NORMALIZED` and recomputes
+each puzzle identity in that requested mode. It raises
+`DuplicatePublicationPuzzleError` for duplicate identities across batches rather
+than discarding content or generating replacements. The builder does not solve,
+rate, or otherwise rerun Phase 1 engine work.
+
+Phase 2.2 converts a `BookPlan` into an immutable abstract `PagePlan` without
+copying its Sudoku content:
+
+```python
+from sudoku_gen.publication import PageLayoutProfile, plan_book_pages
+
+pages = plan_book_pages(
+    plan,
+    layout=PageLayoutProfile(
+        puzzles_per_page=2,
+        solutions_per_page=6,
+        first_page_number=5,
+    ),
+)
+```
+
+Puzzle pages always precede solution pages, and both preserve the global
+`BookPuzzle.number` order. Page numbers are continuous from `first_page_number`.
+Each page contains contiguous, one-based abstract slots up to its independently
+configured capacity; a page may cross a book-section boundary. The lookup methods
+`page_for_puzzle()` and `solution_page_for_puzzle()` locate either appearance by
+global puzzle number. `PagePlan` contains no physical dimensions, coordinates,
+fonts, drawing instructions, or PDF behavior; a later renderer maps these abstract
+slots onto physical pages.
+
+Phase 2.3 adds physical geometry and single-grid rendering, still without drawing
+complete book pages or producing PDFs. Points are the canonical physical unit:
+72 points per inch. `inches_to_points()` and `millimetres_to_points()` provide
+explicit conversions, while `PhysicalPageSize` supplies arbitrary point sizes and
+common 6 by 9 inch, US Letter, and A4 constructors.
+
+`layout_sudoku(Rect(...))` fits the largest centered square in a positive target
+rectangle and derives its cells, centers, and major/minor line positions. Geometry
+uses a top-left origin with x increasing rightward and y increasing downward.
+`render_sudoku()` turns a `Grid` and physical rectangle into backend-neutral
+`VectorDrawing` primitives; line widths and digit sizes are ratios of cell size, so
+the same style scales proportionally at every physical size. `render_svg()` is the
+first backend and emits deterministic self-contained SVG. A PDF backend and full
+page rendering are not implemented yet.
+
+Phase 2.4 maps an abstract `PuzzlePage` to a complete physical vector page through
+`PhysicalPageLayout`, `layout_puzzle_page()`, and `render_puzzle_page()`. The
+default layout is a restrained 6 by 9 inch, two-puzzle page. It reserves margins,
+header and footer bands, and vertically allocates the configured slot capacity;
+partial final pages keep their assigned slot positions and leave lower unused slots
+blank. Each slot receives a centered square Sudoku grid, a `Sudoku #...` label,
+and an optional per-puzzle difficulty label. The header is `SUDOKUS`, while the
+footer uses the existing `PuzzlePage.page_number`. The resulting `VectorDrawing`
+works with `render_svg()`; PDF output, solution-page rendering, and publisher
+margin policies remain future work.
+
+Phase 2.5 adds `SolutionPageLayout`, `layout_solution_page()`, and
+`render_solution_page()` for the solution half of a book interior. The default
+6 by 9 inch layout uses two columns and three rows for six row-major solutions per
+page. Each slot preserves its global puzzle number, renders `Solución #...` above
+the stored completed grid, and reserves the configured capacity on partial final
+pages. The `SOLUCIONES` header and footer retain the existing `SolutionPage`
+number. These drawings are also passed directly to `render_svg()`; PDF output is
+still outside the current scope.
+
+Phase 2.6 adds a direct vector PDF backend using ReportLab. `render_pdf()` converts
+ordered `VectorDrawing` pages to in-memory PDF bytes, translating the established
+top-left coordinate system into PDF's bottom-left coordinates while keeping text
+upright and centered with font metrics. `render_book_pdf()` renders each existing
+`PagePlan` page in order, validates matching physical sizes and abstract/physical
+capacities, and emits puzzle pages followed by solution pages without inserting
+blank pages. The backend accepts minimal caller-supplied title and optional author
+metadata, and uses ReportLab invariant mode for deterministic bytes. It does not
+create front matter.
+
+Phase 2.7 adds `preflight_pdf()` for diagnostic-only local print preflight. The
+initial `PrintProfile` supports 6 by 9 inch, black-and-white, white-paper,
+no-bleed paperbacks using KDP's 24â€“828 effective-page range, published
+inside-margin bands, and 0.25-inch outside/top/bottom safe margins. Reports contain
+stable error, warning, and information diagnostics; only errors block preflight.
+PDF-only inspection covers readability, encryption, page dimensions, annotations,
+font embedding, and page structure. Passing original `VectorDrawing` pages enables
+additional safe-area, stroke-width, and text-size checks, including recto/verso
+inside margins. A local pass is not an approval guarantee: every final manuscript
+must still be checked in Amazon KDP's Print Previewer.
+
+Phase 2.8 makes the supported 6 by 9 inch, no-bleed paperback interior print-safe.
+`SudokuRenderStyle` keeps proportional strokes while applying 0.75-point minor and
+1.25-point major minimums. The PDF backend embeds the bundled Bitstream Vera
+TrueType font under its included redistribution license, including Spanish text;
+the backend-neutral SVG `Text` representation remains unchanged. `PrintProfile`
+now exposes `PageMargins` for physical recto/verso positions. Pass
+`print_profile=PrintProfile()` to `render_book_drawings()` or `render_book_pdf()`
+to apply its page-count-dependent inside margin, alternating inside/outside sides,
+and sufficient clearance for stroke extents. Physical PDF position, rather than the
+printed editorial page number, determines parity. `render_book_drawings()` exposes
+the source drawings for geometry preflight. The renderer does not add padding or
+blank pages, so callers remain responsible for providing a book within the
+publisher's page-count range.
+
+Generate the controlled 24-page development interior with:
+
+```sh
+uv run python scripts/create_phase_2_8_preview.py
+```
+
+It writes the ignored `dev-output/phase-2.8-print-ready-preview.pdf`. Preflight and
+the preview are local diagnostics; final interiors still require KDP Print Previewer
+validation.
+
+Phase 2.9 adds immutable `PublicationMetadata`, `FrontMatterConfig`, and
+`InteriorPlan`. `plan_interior()` places optional title, copyright, instructions,
+and contents pages before an unchanged `PagePlan`. Editorial page numbers remain on
+puzzle and solution pages; physical PDF position includes front matter and governs
+mirrored KDP margins. `render_interior_drawings()` and `render_interior_pdf()` use
+the existing vector/PDF backend, carry supplied title and author into PDF metadata,
+and accept `print_profile=PrintProfile()` for print-safe margins. The contents page
+uses each existing section's first puzzle-page lookup and may show the same printed
+page number for adjacent sections. Long front-matter text is rejected rather than
+clipped. Run `uv run python scripts/create_phase_2_9_preview.py` to create the
+ignored 28-page PDF plus SVG previews of the front matter and first puzzle page.
+
+Phase 2.10 adds `plan_paperback_cover()` for a single continuous 6 by 9-inch KDP
+paperback cover. It inspects the finalized interior PDF, applies the profile's
+effective page count, and calculates the white-paper black-and-white spine as
+`effective_pages × 0.002252` inches. `CoverContent` accepts only caller-authored
+back-cover copy and optional spine text; KDP's lower-right barcode region is reserved
+but no barcode is generated. Spine text requires at least 80 effective pages and a
+measured fit. `render_cover_pdf()` emits a one-page embedded-font vector PDF and
+`validate_cover_pdf()` performs focused local checks. Regenerate the cover whenever
+the interior page count changes, then compare it with KDP's cover calculator and
+template before submission.
+
 ## Development setup
 
 Install Python 3.12+ and `uv`, then run from the repository root:
@@ -578,7 +738,7 @@ uv sync --locked
 ```
 
 This creates `.venv`, installs `sudoku_gen` in editable mode, and installs pytest,
-pytest-cov, Hypothesis, Ruff, and mypy. There are no runtime dependencies.
+pytest-cov, Hypothesis, Ruff, and mypy. Runtime PDF support uses ReportLab and pypdf.
 The existing `uv_build` backend handles package installation and builds.
 `.python-version` selects Python 3.12 for local development; `uv.lock` records the
 resolved dependency versions and should be committed.
