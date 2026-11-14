@@ -89,3 +89,8 @@ claude.ai project, to avoid invalidating the prompt cache of every chat.
 WP1. Skills and agent definitions (`.claude/agents/`) are the next step and
 will be proposed separately. Dependabot pull requests follow D-004 (merge on
 green CI) except for major version bumps, which the Orchestrator reviews.
+
+**Update (agent definitions).** `.claude/agents/` defines `gates-runner`
+(small model), `engineer` and `publication-qa` and `market-researcher`
+(mid-tier) and `reviewer` (top tier, read-only). Finance, data, revenue and
+growth stay as templates until there are sales data (H5/H6).
