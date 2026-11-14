@@ -151,6 +151,10 @@ All must pass. The same gates run in CI (`.github/workflows/ci.yml`) on
 every pull request and on `main`. A gate that was not executed is
 reported as **NOT VERIFIED**, never as passed.
 
+Agents load `docs/CONTEXT_CORE.md` as their minimal briefing. The ratchet
+test `tests/test_editorial_literals.py` fails on any new hard-coded editorial
+text in `publication/` renderers (see ADR-0004).
+
 ## Governance for agents
 
 - **Evidence labels.** Every significant claim in a report, issue, or

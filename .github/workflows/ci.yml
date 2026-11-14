@@ -49,6 +49,19 @@ jobs:
           grep -q "68f65e4a4982e27386c5ca592a3ad3ac27b7273a75a57dba48e3658527a4b1e1  dev-output/phase-2.11-publication/interior.pdf" hashes.txt
           grep -q "d626109e451250d26151405a0d1d2e58e02c8eca197260ee14b189bf03e785f5  dev-output/phase-2.11-publication/cover.pdf" hashes.txt
 
+      - name: Render sample pages for visual review
+        if: always()
+        run: |
+          out=dev-output/phase-2.11-publication
+          mkdir -p dev-output/samples
+          if command -v pdftoppm >/dev/null && [ -f "$out/interior.pdf" ]; then
+            pdftoppm -png -r 60 -f 1 -l 6 "$out/interior.pdf" dev-output/samples/interior
+            pdftoppm -png -r 60 -f 27 -l 28 "$out/interior.pdf" dev-output/samples/interior-end
+            pdftoppm -png -r 60 "$out/cover.pdf" dev-output/samples/cover
+          else
+            echo "pdftoppm or interior.pdf not available; sample pages skipped"
+          fi
+
       - name: Upload coverage and publication artifacts
         if: always()
         uses: actions/upload-artifact@v4
@@ -59,4 +72,5 @@ jobs:
             hashes.txt
             dev-output/phase-2.11-publication/manifest.json
             dev-output/phase-2.11-publication/quality-report.json
+            dev-output/samples/*.png
           if-no-files-found: ignore
