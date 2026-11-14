@@ -1,10 +1,31 @@
 # Sudoku Gen
 
-A deterministic Sudoku generation engine intended to produce publication-quality
-puzzles. Phase 1.15 adds Naked Triple, Hidden Triple, and X-Wing deductions to
-the persistent human logical solver, alongside deterministic batch QA statistics,
-bounded batch generation, stable fingerprints, rule checks, mathematical solving,
-and seeded puzzle generation. Application features have not been implemented.
+A deterministic Sudoku generation and publication engine that produces
+publication-quality 9x9 puzzles and composes them into print-ready books.
+
+**Status (v0.2.0, baseline `c05ce0c`):** the Sudoku engine (historical phase 1)
+and the editorial pipeline up to phase 2.11 are implemented and tested. One
+command generates a complete 6 by 9 inch paperback: vector interior PDF, cover
+PDF, manifest, and quality report. See [Publication pipeline](#publication-pipeline-phase-211).
+
+**Not implemented or not yet verified:** localizable editorial text (several
+labels are hard-coded; the per-puzzle difficulty label prints in English),
+a persistent cross-book puzzle registry, engine/dependency versions in the
+manifest, validation in Amazon KDP's official tools, and any published or sold
+edition. Web interfaces, APIs, databases, and cloud infrastructure are
+deliberately out of scope. The roadmap is in [docs/ROADMAP.md](docs/ROADMAP.md)
+and the engineering rules in [AGENTS.md](AGENTS.md).
+
+## Quick start
+
+```sh
+uv sync --locked
+uv run python scripts/create_phase_2_11_publication.py
+```
+
+This writes `dev-output/phase-2.11-publication/` with `interior.pdf` (28 pages),
+`cover.pdf`, `manifest.json`, and `quality-report.json` for a 36-puzzle Easy
+development book. It is a development sample, not a commercial edition.
 
 ## Domain model
 
@@ -729,6 +750,83 @@ measured fit. `render_cover_pdf()` emits a one-page embedded-font vector PDF and
 the interior page count changes, then compare it with KDP's cover calculator and
 template before submission.
 
+## Publication pipeline (phase 2.11)
+
+Phase 2.11 integrates every earlier step into one bounded, deterministic job.
+
+```python
+from pathlib import Path
+
+from sudoku_gen.difficulty import Difficulty
+from sudoku_gen.publication import (
+    CoverContent,
+    FrontMatterConfig,
+    PublicationJob,
+    PublicationMetadata,
+    PublicationSectionSpec,
+    export_publication,
+    run_publication,
+)
+
+job = PublicationJob(
+    metadata=PublicationMetadata("Sudokus de ejemplo", author="Sudoku Gen"),
+    sections=(PublicationSectionSpec("Fácil", Difficulty.EASY, 36),),
+    seed=202611,
+    front_matter=FrontMatterConfig(True, True, True, True),
+    cover_content=CoverContent(back_cover_copy="Una colección de sudokus."),
+)
+result = run_publication(job)
+export_publication(result, Path("dev-output/my-book"))
+```
+
+`PublicationJob` is immutable and carries `metadata`, one or more
+`PublicationSectionSpec(title, difficulty, count)` entries, the book `seed`, and
+defaults for `front_matter`, `target_clues=30`, `symmetry=ROTATIONAL_180`,
+`deduplication_mode=DIGIT_NORMALIZED`, `max_attempts=500`,
+`max_section_regenerations=3`, `strategy=RANDOM_RETRY`, `page_layout`,
+`print_profile`, and `cover_content`. `UNRATED` sections are rejected.
+
+`run_publication(job)` derives one stable seed per section with
+`section_seed()` (SHA-256 of seed, section index, and retry index), generates
+each bounded batch, audits it independently, builds the book plan, regenerates a
+section with the next retry seed when a cross-section duplicate appears (up to
+`max_section_regenerations`), plans pages and front matter, renders the interior
+PDF, runs local preflight, plans and renders the cover, and validates it. It
+raises if any blocking issue remains; it never silently relaxes difficulty,
+uniqueness, or deduplication.
+
+`PublicationResult` exposes the job, batches, section seeds and regeneration
+counts, quality and audit reports, the book, page, interior, and cover plans,
+both PDFs as bytes, and the preflight and cover reports.
+
+`export_publication(result, directory)` refuses an existing directory, writes to
+a `.staging` sibling, then renames it atomically. It produces:
+
+| File | Content |
+| --- | --- |
+| `interior.pdf` | Print-ready interior, embedded Bitstream Vera, invariant mode |
+| `cover.pdf` | One-page paperback cover sized from the final page count |
+| `manifest.json` | `schema_version: 1`, title, author, seed, per-section seed/attempts/regenerations, page counts, spine width, cover size, SHA-256 of both PDFs, `preflight_blocking` |
+| `quality-report.json` | Per-batch acceptance/rejection counts, audit result and issue codes, preflight and cover issue codes |
+
+Run the reference development book with:
+
+```sh
+uv run python scripts/create_phase_2_11_publication.py
+```
+
+It writes the ignored `dev-output/phase-2.11-publication/` (28 pages, 36 Easy
+puzzles, seed `202611`). The output is byte-reproducible: the same inputs
+produced identical PDF hashes on Windows/Python 3.12 and Linux/Python 3.13
+(`interior.pdf` `68f65e4a…27b1`, `cover.pdf` `d626109e…85f5`).
+
+Known limitations of this phase, tracked in [docs/ROADMAP.md](docs/ROADMAP.md):
+editorial labels are hard-coded (headers in Spanish, per-puzzle difficulty label
+in English); the manifest does not record the engine version, commit,
+dependency versions, font, or per-puzzle fingerprints; deduplication is
+per-job only, with no registry across editions; no barcode is drawn; and a local
+pass is not an approval by Amazon KDP.
+
 ## Development setup
 
 Install Python 3.12+ and `uv`, then run from the repository root:
@@ -749,11 +847,14 @@ Read [AGENTS.md](AGENTS.md) before making changes. Run the required checks from
 the repository root:
 
 ```sh
-uv run ruff format .
+uv run ruff format --check .
 uv run ruff check .
 uv run mypy src
 uv run pytest
 ```
+
+The same gates run in GitHub Actions (`.github/workflows/ci.yml`) on every pull
+request and push to `main`. Use `uv run ruff format .` to apply formatting.
 
 To collect coverage:
 
@@ -809,13 +910,32 @@ src/sudoku_gen/candidates.py  Local immutable candidate sets
 src/sudoku_gen/solver.py      Solving, capped counting, and uniqueness checks
 src/sudoku_gen/human_solver.py  Logical solving, checked actions, and state replay
 src/sudoku_gen/_logical_models.py  Immutable logical state and action records
-src/sudoku_gen/_logical_techniques.py  Pure singles, subsets, box/line, and X-Wing deductions
+src/sudoku_gen/_logical_techniques.py  Singles, subsets, box/line, X-Wing, XY-Wing, Swordfish
 src/sudoku_gen/difficulty.py  Explicit trace-based difficulty policy and reports
 src/sudoku_gen/pattern.py     Clue-position symmetry and descriptive pattern reports
 src/sudoku_gen/fingerprint.py Stable clue-grid identities and deduplication
-src/sudoku_gen/generator.py   Seeded generation, carving, and bounded targeting/batches
+src/sudoku_gen/generator.py   Seeded generation, carving strategies, bounded targeting/batches
 src/sudoku_gen/quality.py     Batch statistics and independent invariant audits
 src/sudoku_gen/benchmark.py   Observational bounded-batch timing harness
+src/sudoku_gen/publication/__init__.py   Public editorial API
+src/sudoku_gen/publication/models.py     BookPuzzle, BookSection, BookPlan, build_book_plan
+src/sudoku_gen/publication/pages.py      Abstract PagePlan and page lookups
+src/sudoku_gen/publication/geometry.py   Points, rectangles, Sudoku grid layout
+src/sudoku_gen/publication/render.py     Backend-neutral vector drawing and SVG backend
+src/sudoku_gen/publication/page_render.py      Physical puzzle pages
+src/sudoku_gen/publication/solution_render.py  Physical solution pages
+src/sudoku_gen/publication/front_render.py     Title, copyright, instructions, contents pages
+src/sudoku_gen/publication/interior.py   PublicationMetadata, FrontMatterConfig, InteriorPlan
+src/sudoku_gen/publication/interior_pdf.py  Interior drawings and PDF with print profile
+src/sudoku_gen/publication/pdf.py        ReportLab vector PDF backend (invariant mode)
+src/sudoku_gen/publication/preflight.py  Local print preflight and PrintProfile
+src/sudoku_gen/publication/cover.py      Paperback cover planning, rendering, validation
+src/sudoku_gen/publication/pipeline.py   PublicationJob, run_publication, export_publication
+src/sudoku_gen/publication/assets/       Bitstream Vera font and license
+scripts/create_phase_2_8_preview.py      24-page print-ready interior preview
+scripts/create_phase_2_9_preview.py      28-page interior with front matter
+scripts/create_phase_2_10_preview.py     Cover preview and diagnostic
+scripts/create_phase_2_11_publication.py Reference end-to-end development book
 tests/test_package.py        Package import smoke test
 tests/test_models.py         Domain model tests and serialization properties
 tests/test_validation.py     Sudoku rules, coordinates, and clue-removal property
@@ -823,10 +943,12 @@ tests/test_candidates.py     Candidate rules and cell-access behavior
 tests/test_solver.py         Solving, backtracking, and solution invariants
 tests/test_solution_counting.py  Counts, uniqueness, and early termination
 tests/test_generator.py      Seeded generation and carving invariants
+tests/test_guided_generation.py  Guided difficulty-aware carving
 tests/test_human_techniques.py  Independent single detection and priority fixtures
 tests/test_human_solver.py    Logical solving, replay, errors, and invariants
 tests/test_elimination_techniques.py  Pair and box/line deduction fixtures
 tests/test_triple_xwing_techniques.py  Triple, X-Wing, cascade, and replay fixtures
+tests/test_xy_wing_swordfish_techniques.py  XY-Wing and Swordfish fixtures
 tests/test_logical_state.py   Candidate-state validation and replay compatibility
 tests/test_logical_replay.py  Mixed logs and candidate-preservation properties
 tests/test_difficulty.py     Exact metrics, classification boundaries, and properties
@@ -837,13 +959,29 @@ tests/test_fingerprint.py    Fingerprint modes and order-preserving deduplicatio
 tests/test_batch_generation.py  Bounded difficulty batch orchestration
 tests/test_quality.py        Deterministic statistics and invariant audit reports
 tests/test_benchmark.py      Controlled benchmark arithmetic and configurations
+tests/test_publication.py    Book plans and duplicate detection
+tests/test_page_planning.py  Abstract page planning
+tests/test_publication_rendering.py  Geometry, vector drawing, SVG
+tests/test_puzzle_page_rendering.py  Physical puzzle pages
+tests/test_solution_page_rendering.py  Physical solution pages
+tests/test_pdf.py            PDF backend and book PDF
+tests/test_preflight.py      Local preflight diagnostics
+tests/test_print_ready_interior.py  Print-safe interior and margins
+tests/test_interior.py       Front matter and interior planning
+tests/test_cover.py          Cover planning, rendering, validation
+tests/test_publication_pipeline.py  End-to-end job, manifest, export
+docs/ROADMAP.md              Milestones, status, and exit criteria
+docs/DECISIONS.md            Decision log and ADRs
+docs/RISK_REGISTER.md        Risks, owners, and mitigations
+docs/RELEASE_CHECKLIST.md    Gates an edition must pass before publication
+.github/workflows/ci.yml     Quality gates on pull requests and main
 pyproject.toml               Package metadata, dev dependencies, tool configuration
 uv.lock                      Resolved dependency versions
 .python-version              Local Python version
 .gitignore                   Generated files excluded from Git
 .vscode/settings.json        Python, pytest, Ruff, and mypy editor settings
 .vscode/extensions.json      Recommended development extensions
-AGENTS.md                    Engineering instructions
+AGENTS.md                    Engineering and agent instructions
 README.md                    Project status and development workflow
 ```
 

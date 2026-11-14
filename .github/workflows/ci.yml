@@ -1,0 +1,62 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality-gates:
+    name: Quality gates (Python 3.12)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install uv and Python 3.12
+        uses: astral-sh/setup-uv@v7
+        with:
+          version: "0.12.x"
+          python-version: "3.12"
+          enable-cache: true
+
+      - name: Sync locked dependencies
+        run: uv sync --locked
+
+      - name: Ruff format check
+        run: uv run ruff format --check .
+
+      - name: Ruff lint
+        run: uv run ruff check .
+
+      - name: mypy (strict)
+        run: uv run mypy src
+
+      - name: pytest with coverage
+        run: uv run pytest --cov --cov-report=term-missing --cov-report=xml
+
+      - name: Reference publication reproducibility
+        run: |
+          uv run python scripts/create_phase_2_11_publication.py
+          sha256sum dev-output/phase-2.11-publication/interior.pdf dev-output/phase-2.11-publication/cover.pdf | tee hashes.txt
+          grep -q "68f65e4a4982e27386c5ca592a3ad3ac27b7273a75a57dba48e3658527a4b1e1  dev-output/phase-2.11-publication/interior.pdf" hashes.txt
+          grep -q "d626109e451250d26151405a0d1d2e58e02c8eca197260ee14b189bf03e785f5  dev-output/phase-2.11-publication/cover.pdf" hashes.txt
+
+      - name: Upload coverage and publication artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-artifacts
+          path: |
+            coverage.xml
+            hashes.txt
+            dev-output/phase-2.11-publication/manifest.json
+            dev-output/phase-2.11-publication/quality-report.json
+          if-no-files-found: ignore

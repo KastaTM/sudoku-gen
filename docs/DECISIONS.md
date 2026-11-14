@@ -1,0 +1,68 @@
+# Sudoku Gen — Decision log
+
+Decisions are appended, never rewritten. Superseding a decision adds a
+new entry that references the old one. Each entry states who decided,
+the status, and what it changes.
+
+| ID | Date | Decision | Decided by | Status |
+| --- | --- | --- | --- | --- |
+| ADR-0001 | 2026-11-14 | Baseline of record is tag `v0.2.0` = `c05ce0c858ac36e3d2dd35762856301c25cca856`; all task contracts reference it until `main` moves | Orchestrator, confirmed by promoter | Accepted |
+| ADR-0002 | 2026-11-14 | Agentic governance: evidence labels, task contracts, branch + PR workflow, CI as the only accepted quality-gate environment, mandatory human approval for irreversible or external actions (see `AGENTS.md` § Governance) | Promoter (intent), Orchestrator (design) | Accepted |
+| D-001 | 2026-11-14 | Pilot edition language and market: `es-ES` | Promoter | Accepted |
+| D-002 | 2026-11-14 | Pilot audience and promise: one progression volume (Easy → Hard) for adult puzzle fans; revisable after niche research | Promoter (default recommendation accepted tacitly) | Accepted |
+| D-003 | 2026-11-14 | Channel and format: Amazon KDP paperback, 6 × 9 in, black and white, white paper, no bleed (the only implemented print profile) | Promoter (default recommendation accepted tacitly) | Accepted |
+| D-004 | 2026-11-14 | Agent permissions on the repository: branches + pull requests; **autonomous merge allowed when CI is green**. Publishing, spending, public pricing, advertising, account creation and policy changes still require explicit promoter approval | Promoter | Accepted |
+| D-005 | 2026-11-14 | Budget for H3: minimal spend (one author copy; native review by the promoter); no spend without prior notice | Promoter (default recommendation accepted tacitly) | Accepted |
+| D-006 | 2026-11-14 | Puzzle reuse policy: puzzles are **exclusive per SKU** across all editions and languages; enforced by the edition registry (H3/WP1) | Promoter | Accepted |
+| D-007 | 2026-11-14 | Imprint / author name for cover, copyright and metadata | Promoter | **Pending** — must be resolved before the pilot cover (WP2) |
+| ADR-0003 | 2026-11-14 | Delegation model: the Orchestrator publishes a short step brief before each work package and proceeds unless the promoter objects; explicit approval only for the actions listed in D-004; every repeated manual step becomes an automation candidate | Promoter (intent), Orchestrator (design) | Accepted |
+
+## ADR-0001 — Baseline of record
+
+**Context.** The knowledge-transfer document dated 2026-11-11 named
+commit `c05ce0c` as the verified baseline. On 2026-11-14 `main` on GitHub
+and the promoter's local clone were both at that commit with no other
+branches, stashes or local commits. An annotated tag `v0.2.0` points to
+it, while `pyproject.toml` still declared `0.1.0`.
+
+**Decision.** `v0.2.0` / `c05ce0c` is the baseline. The version in
+`pyproject.toml` and `uv.lock` is raised to `0.2.0` in H2b with no
+functional change.
+
+**Consequences.** Task contracts cite this SHA. Reference PDF hashes of
+the phase 2.11 development book at this baseline are
+`interior.pdf = 68f65e4a4982e27386c5ca592a3ad3ac27b7273a75a57dba48e3658527a4b1e1`
+and
+`cover.pdf = d626109e451250d26151405a0d1d2e58e02c8eca197260ee14b189bf03e785f5`
+(identical on Windows/Python 3.12 and Linux/Python 3.13).
+
+## ADR-0002 — Agentic governance
+
+**Context.** `AGENTS.md` described a single coding agent working on
+phase 1 and forbade PDF/KDP work that the code already implements. The
+project moves to an orchestrator plus departmental agents, with the
+promoter keeping strategic decisions.
+
+**Decision.** Governance rules live in `AGENTS.md` § Governance for
+agents and are binding for every agent. CI is the only environment whose
+quality-gate results count as evidence; a gate that did not run is
+NOT VERIFIED.
+
+**Consequences.** Pull requests carry evidence in their description.
+Documentation, decisions and risks are updated in the same pull request
+as the change they describe.
+
+## ADR-0003 — Delegation model
+
+**Context.** The promoter wants to be informed of every step and its
+rationale, to be able to object, and otherwise to delegate and automate
+as much as possible.
+
+**Decision.** Before each work package the Orchestrator publishes a
+step brief (what, why, evidence to be delivered, risk). Absent an
+objection, work proceeds. Explicit approval is required only for the
+actions listed in D-004. Cover and text proposals are presented once,
+with alternatives, before publication.
+
+**Consequences.** Fewer approval round-trips; a complete audit trail in
+this file and in pull requests.
