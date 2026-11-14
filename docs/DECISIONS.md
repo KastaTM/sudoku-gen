@@ -16,6 +16,7 @@ the status, and what it changes.
 | D-006 | 2026-11-14 | Puzzle reuse policy: puzzles are **exclusive per SKU** across all editions and languages; enforced by the edition registry (H3/WP1) | Promoter | Accepted |
 | D-007 | 2026-11-14 | Imprint / author name for cover, copyright and metadata | Promoter | **Pending** — must be resolved before the pilot cover (WP2) |
 | ADR-0003 | 2026-11-14 | Delegation model: the Orchestrator publishes a short step brief before each work package and proceeds unless the promoter objects; explicit approval only for the actions listed in D-004; every repeated manual step becomes an automation candidate | Promoter (intent), Orchestrator (design) | Accepted |
+| ADR-0004 | 2026-11-14 | Workflow automation: deterministic checks live in CI, tests and hooks, not in agent turns; delegated work is tiered by model (small for mechanical checks, mid-tier by default, top-tier for architecture and independent review); agents load `docs/CONTEXT_CORE.md` instead of the full context document; decision and risk logs live in the repository | Orchestrator, proposed to promoter | Accepted (no objection) |
 
 ## ADR-0001 — Baseline of record
 
@@ -66,3 +67,25 @@ with alternatives, before publication.
 
 **Consequences.** Fewer approval round-trips; a complete audit trail in
 this file and in pull requests.
+
+## ADR-0004 — Workflow automation and model tiers
+
+**Context.** Quality gates, reference hashes and deduplication are already
+deterministic, but running them through agent turns spends tokens and time.
+The 14-11-2026 audit found 8 hard-coded editorial literals and no automated
+guard against adding more.
+
+**Decision.** (1) Checks that code can perform run in CI, tests or hooks:
+`tests/test_editorial_literals.py` (ratchet over renderer literals),
+sample-page PNG artifacts in CI, Dependabot for `uv` and GitHub Actions, and
+a Claude Code hook that formats edited Python files. (2) Delegated work is
+tiered by model: small model for mechanical checks, mid-tier by default, top
+tier for architecture and independent review of critical pull requests.
+(3) Agents start from `docs/CONTEXT_CORE.md`; the knowledge-transfer document
+is historical. (4) Logs of decisions and risks stay in `docs/`, not in the
+claude.ai project, to avoid invalidating the prompt cache of every chat.
+
+**Consequences.** `KNOWN_DEBT` in the ratchet test must shrink to empty in
+WP1. Skills and agent definitions (`.claude/agents/`) are the next step and
+will be proposed separately. Dependabot pull requests follow D-004 (merge on
+green CI) except for major version bumps, which the Orchestrator reviews.
