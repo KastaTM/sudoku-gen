@@ -33,6 +33,12 @@ purchase, FR/DE, UI/API/DB.
 - Acceptance: CI green on the pull request and on `main`; the 12
   Hypothesis property tests executed; coverage percentage recorded as a
   baseline (not a target).
+- Evidence (CONFIRMED, CI run 43597837180 on PR #1, 2026-11-14): Ubuntu,
+  CPython 3.12.15, uv 0.12.24, `uv sync --locked` OK; ruff format/check,
+  mypy strict PASS; **1206 tests passed** (incl. the 12 Hypothesis property
+  tests) in 164.65 s; **coverage baseline 87 %** (branch coverage, 2949
+  statements, 276 missed); 2.11 reference PDF hashes identical to the
+  Windows and Linux runs (third independent environment).
 
 ### WP1 — i18n and catalogue foundation (Technology)
 
