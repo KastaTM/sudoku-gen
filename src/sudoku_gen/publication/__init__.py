@@ -43,6 +43,14 @@ from sudoku_gen.publication.interior_pdf import (
     render_interior_drawings,
     render_interior_pdf,
 )
+from sudoku_gen.publication.locale import (
+    EN_US,
+    ES_ES,
+    BookLocale,
+    UnknownLocaleError,
+    available_book_locales,
+    get_book_locale,
+)
 from sudoku_gen.publication.models import (
     BookPlan,
     BookPuzzle,
@@ -108,6 +116,12 @@ from sudoku_gen.publication.solution_render import (
 )
 
 __all__ = (
+    "EN_US",
+    "ES_ES",
+    "BookLocale",
+    "UnknownLocaleError",
+    "available_book_locales",
+    "get_book_locale",
     "BookPlan",
     "BookPuzzle",
     "BookSection",

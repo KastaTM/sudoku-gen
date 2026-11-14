@@ -46,7 +46,7 @@ jobs:
         run: |
           uv run python scripts/create_phase_2_11_publication.py
           sha256sum dev-output/phase-2.11-publication/interior.pdf dev-output/phase-2.11-publication/cover.pdf | tee hashes.txt
-          grep -q "68f65e4a4982e27386c5ca592a3ad3ac27b7273a75a57dba48e3658527a4b1e1  dev-output/phase-2.11-publication/interior.pdf" hashes.txt
+          grep -q "3f6ae31e6e7b1433d28ef584af77f2a05d6aa1bb1d49c769303cfbd9230c8b64  dev-output/phase-2.11-publication/interior.pdf" hashes.txt
           grep -q "d626109e451250d26151405a0d1d2e58e02c8eca197260ee14b189bf03e785f5  dev-output/phase-2.11-publication/cover.pdf" hashes.txt
 
       - name: Install poppler for sample pages

@@ -8,6 +8,7 @@ from reportlab.pdfbase import pdfmetrics  # type: ignore[import-untyped]
 from reportlab.pdfbase.ttfonts import TTFont  # type: ignore[import-untyped]
 from reportlab.pdfgen import canvas as reportlab_canvas  # type: ignore[import-untyped]
 
+from sudoku_gen.publication.locale import ES_ES, BookLocale
 from sudoku_gen.publication.page_render import (
     PhysicalPageLayout,
     render_puzzle_page,
@@ -132,6 +133,7 @@ def render_book_drawings(
     solution_layout: SolutionPageLayout = _DEFAULT_SOLUTION_LAYOUT,
     sudoku_style: SudokuRenderStyle | None = None,
     print_profile: PrintProfile | None = None,
+    locale: BookLocale = ES_ES,
 ) -> tuple[VectorDrawing, ...]:
     """Render planned pages with optional KDP-aware mirrored physical margins."""
     if not isinstance(page_plan, PagePlan):
@@ -177,6 +179,7 @@ def render_book_drawings(
                     puzzle_layout,
                     sudoku_style=style,
                     margins=margins,
+                    locale=locale,
                 )
             )
         elif isinstance(page, SolutionPage):
@@ -186,6 +189,7 @@ def render_book_drawings(
                     solution_layout,
                     sudoku_style=style,
                     margins=margins,
+                    locale=locale,
                 )
             )
         else:
@@ -200,6 +204,7 @@ def render_book_pdf(
     solution_layout: SolutionPageLayout = _DEFAULT_SOLUTION_LAYOUT,
     sudoku_style: SudokuRenderStyle | None = None,
     print_profile: PrintProfile | None = None,
+    locale: BookLocale = ES_ES,
     title: str = "Sudoku Gen",
     author: str | None = None,
 ) -> bytes:
@@ -211,6 +216,7 @@ def render_book_pdf(
             solution_layout=solution_layout,
             sudoku_style=sudoku_style,
             print_profile=print_profile,
+            locale=locale,
         ),
         title=title,
         author=author,

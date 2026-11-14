@@ -8,6 +8,7 @@ from sudoku_gen.publication.interior import (
     InteriorPlan,
     TitlePage,
 )
+from sudoku_gen.publication.locale import ES_ES, BookLocale
 from sudoku_gen.publication.page_render import PhysicalPageLayout, render_puzzle_page
 from sudoku_gen.publication.pages import PuzzlePage, SolutionPage
 from sudoku_gen.publication.pdf import render_pdf
@@ -29,6 +30,7 @@ def render_interior_drawings(
     solution_layout: SolutionPageLayout = _DEFAULT_SOLUTION_LAYOUT,
     sudoku_style: SudokuRenderStyle | None = None,
     print_profile: PrintProfile | None = None,
+    locale: BookLocale = ES_ES,
 ) -> tuple[VectorDrawing, ...]:
     """Render an InteriorPlan with margins based on complete physical page position."""
     if not isinstance(interior, InteriorPlan):
@@ -59,21 +61,33 @@ def render_interior_drawings(
         )
         if isinstance(page, (TitlePage, CopyrightPage, InstructionsPage, ContentsPage)):
             if margins is None:
-                drawings.append(render_front_matter_page(page, interior.metadata))
+                drawings.append(
+                    render_front_matter_page(page, interior.metadata, locale=locale)
+                )
             else:
                 drawings.append(
-                    render_front_matter_page(page, interior.metadata, margins=margins)
+                    render_front_matter_page(
+                        page, interior.metadata, margins=margins, locale=locale
+                    )
                 )
         elif isinstance(page, PuzzlePage):
             drawings.append(
                 render_puzzle_page(
-                    page, puzzle_layout, sudoku_style=style, margins=margins
+                    page,
+                    puzzle_layout,
+                    sudoku_style=style,
+                    margins=margins,
+                    locale=locale,
                 )
             )
         elif isinstance(page, SolutionPage):
             drawings.append(
                 render_solution_page(
-                    page, solution_layout, sudoku_style=style, margins=margins
+                    page,
+                    solution_layout,
+                    sudoku_style=style,
+                    margins=margins,
+                    locale=locale,
                 )
             )
         else:
@@ -88,6 +102,7 @@ def render_interior_pdf(
     solution_layout: SolutionPageLayout = _DEFAULT_SOLUTION_LAYOUT,
     sudoku_style: SudokuRenderStyle | None = None,
     print_profile: PrintProfile | None = None,
+    locale: BookLocale = ES_ES,
 ) -> bytes:
     """Render a complete editorial interior and carry caller metadata into the PDF."""
     if not isinstance(interior, InteriorPlan):
@@ -99,6 +114,7 @@ def render_interior_pdf(
             solution_layout=solution_layout,
             sudoku_style=sudoku_style,
             print_profile=print_profile,
+            locale=locale,
         ),
         title=interior.metadata.title,
         author=interior.metadata.author,

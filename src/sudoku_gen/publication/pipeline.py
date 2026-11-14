@@ -32,6 +32,7 @@ from sudoku_gen.publication.interior_pdf import (
     render_interior_drawings,
     render_interior_pdf,
 )
+from sudoku_gen.publication.locale import ES_ES, BookLocale
 from sudoku_gen.publication.models import BookPlan, BookSectionInput, build_book_plan
 from sudoku_gen.publication.pages import PageLayoutProfile, PagePlan, plan_book_pages
 from sudoku_gen.publication.preflight import (
@@ -80,6 +81,7 @@ class PublicationJob:
     page_layout: PageLayoutProfile = PageLayoutProfile()
     print_profile: PrintProfile = PrintProfile()
     cover_content: CoverContent = CoverContent()
+    locale: BookLocale = ES_ES
 
     def __post_init__(self) -> None:
         if not isinstance(self.metadata, PublicationMetadata) or not self.sections:
@@ -90,6 +92,8 @@ class PublicationJob:
             raise TypeError("sections must contain PublicationSectionSpec instances.")
         if type(self.seed) is not int:
             raise TypeError("seed must be a built-in integer.")
+        if not isinstance(self.locale, BookLocale):
+            raise TypeError("locale must be a BookLocale.")
         if type(self.max_section_regenerations) is not int:
             raise TypeError("max_section_regenerations must be a built-in integer.")
         if self.max_section_regenerations < 0:
@@ -183,8 +187,12 @@ def run_publication(job: PublicationJob) -> PublicationResult:
     )
     pages = plan_book_pages(book, layout=job.page_layout)
     interior = plan_interior(job.metadata, pages, config=job.front_matter)
-    drawings = render_interior_drawings(interior, print_profile=job.print_profile)
-    interior_pdf = render_interior_pdf(interior, print_profile=job.print_profile)
+    drawings = render_interior_drawings(
+        interior, print_profile=job.print_profile, locale=job.locale
+    )
+    interior_pdf = render_interior_pdf(
+        interior, print_profile=job.print_profile, locale=job.locale
+    )
     preflight = preflight_pdf(
         interior_pdf,
         drawings=drawings,
