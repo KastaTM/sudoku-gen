@@ -214,10 +214,10 @@ def test_page_renderer_draws_header_labels_grids_and_existing_page_number() -> N
     assert tuple(item.content for item in text) == (
         "SUDOKUS",
         "Sudoku #1",
-        "Easy",
+        "Fácil",
         "5",
         "Sudoku #2",
-        "Hard",
+        "Difícil",
         "3",
         "17",
     )
@@ -259,10 +259,10 @@ def test_complete_page_svg_is_valid_and_has_expected_page_elements() -> None:
     assert tuple(text.text for text in root.findall(f"{SVG_NAMESPACE}text")) == (
         "SUDOKUS",
         "Sudoku #1",
-        "Easy",
+        "Fácil",
         "5",
         "Sudoku #2",
-        "Easy",
+        "Fácil",
         "3",
         "9",
     )

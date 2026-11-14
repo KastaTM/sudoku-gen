@@ -818,7 +818,7 @@ uv run python scripts/create_phase_2_11_publication.py
 It writes the ignored `dev-output/phase-2.11-publication/` (28 pages, 36 Easy
 puzzles, seed `202611`). The output is byte-reproducible: the same inputs
 produced identical PDF hashes on Windows/Python 3.12 and Linux/Python 3.13
-(`interior.pdf` `68f65e4a…27b1`, `cover.pdf` `d626109e…85f5`).
+(`interior.pdf` `3f6ae31e…8b64`, `cover.pdf` `d626109e…85f5`).
 
 Known limitations of this phase, tracked in [docs/ROADMAP.md](docs/ROADMAP.md):
 editorial labels are hard-coded (headers in Spanish, per-puzzle difficulty label

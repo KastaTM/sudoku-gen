@@ -14,6 +14,7 @@ from sudoku_gen.publication.geometry import (
     Rect,
     layout_sudoku,
 )
+from sudoku_gen.publication.locale import ES_ES, BookLocale
 from sudoku_gen.publication.pages import PuzzlePage, PuzzlePageItem
 from sudoku_gen.publication.preflight import PageMargins
 from sudoku_gen.publication.render import (
@@ -335,16 +336,17 @@ def render_puzzle_page(
     *,
     sudoku_style: SudokuRenderStyle | None = None,
     margins: PageMargins | None = None,
+    locale: BookLocale = ES_ES,
 ) -> VectorDrawing:
     """Render a complete physical puzzle page using the single-grid renderer."""
     geometry = layout_puzzle_page(page, physical_layout, margins=margins)
     primitives: list[VectorPrimitive] = [
-        Text("SUDOKUS", geometry.header_rect.center, _HEADER_FONT_SIZE)
+        Text(locale.puzzle_page_header, geometry.header_rect.center, _HEADER_FONT_SIZE)
     ]
     for slot in geometry.slots:
         primitives.append(
             Text(
-                f"Sudoku #{slot.item.puzzle.number}",
+                locale.puzzle_label(slot.item.puzzle.number),
                 slot.title_position,
                 _PUZZLE_TITLE_FONT_SIZE,
             )
@@ -352,7 +354,9 @@ def render_puzzle_page(
         if slot.difficulty_position is not None:
             primitives.append(
                 Text(
-                    slot.item.puzzle.difficulty_report.difficulty.value.title(),
+                    locale.difficulty_label(
+                        slot.item.puzzle.difficulty_report.difficulty
+                    ),
                     slot.difficulty_position,
                     _DIFFICULTY_FONT_SIZE,
                 )

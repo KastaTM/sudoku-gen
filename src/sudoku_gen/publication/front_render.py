@@ -11,6 +11,7 @@ from sudoku_gen.publication.interior import (
     PublicationMetadata,
     TitlePage,
 )
+from sudoku_gen.publication.locale import ES_ES, BookLocale
 from sudoku_gen.publication.preflight import PageMargins
 from sudoku_gen.publication.render import Text, VectorDrawing
 
@@ -59,6 +60,7 @@ def render_front_matter_page(
     metadata: PublicationMetadata,
     *,
     margins: PageMargins = _DEFAULT_MARGINS,
+    locale: BookLocale = ES_ES,
 ) -> VectorDrawing:
     """Render an explicit front-matter page with no inferred editorial content."""
     if not isinstance(page, (TitlePage, CopyrightPage, InstructionsPage, ContentsPage)):
@@ -83,15 +85,21 @@ def render_front_matter_page(
     elif isinstance(page, CopyrightPage):
         if metadata.copyright_notice is None:
             raise ValueError("A copyright page requires copyright_notice content.")
-        texts = list(_body_text(metadata.copyright_notice, rect, heading="Información"))
+        texts = list(
+            _body_text(
+                metadata.copyright_notice, rect, heading=locale.copyright_heading
+            )
+        )
     elif isinstance(page, InstructionsPage):
         if metadata.instructions is None:
             raise ValueError("An instructions page requires instructions content.")
-        texts = list(_body_text(metadata.instructions, rect, heading="Instrucciones"))
+        texts = list(
+            _body_text(metadata.instructions, rect, heading=locale.instructions_heading)
+        )
     else:
         if len(page.entries) > 24:
             raise ValueError("Table of contents does not fit on one page.")
-        texts = [Text("Contenido", Point(rect.center.x, rect.top + 24), 16)]
+        texts = [Text(locale.contents_heading, Point(rect.center.x, rect.top + 24), 16)]
         texts.extend(
             Text(
                 f"{entry.title}  {entry.editorial_page_number}",

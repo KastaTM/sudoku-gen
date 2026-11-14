@@ -10,6 +10,7 @@ from sudoku_gen.publication.geometry import (
     Rect,
     layout_sudoku,
 )
+from sudoku_gen.publication.locale import ES_ES, BookLocale
 from sudoku_gen.publication.pages import SolutionPage, SolutionPageItem
 from sudoku_gen.publication.preflight import PageMargins
 from sudoku_gen.publication.render import (
@@ -313,18 +314,21 @@ def render_solution_page(
     *,
     sudoku_style: SudokuRenderStyle | None = None,
     margins: PageMargins | None = None,
+    locale: BookLocale = ES_ES,
 ) -> VectorDrawing:
     """Render a complete physical solution page with solved Sudoku grids."""
     geometry = layout_solution_page(page, physical_layout, margins=margins)
     if sudoku_style is not None and not isinstance(sudoku_style, SudokuRenderStyle):
         raise TypeError("sudoku_style must be a SudokuRenderStyle or None.")
     primitives: list[VectorPrimitive] = [
-        Text("SOLUCIONES", geometry.header_rect.center, _HEADER_FONT_SIZE)
+        Text(
+            locale.solution_page_header, geometry.header_rect.center, _HEADER_FONT_SIZE
+        )
     ]
     for slot in geometry.slots:
         primitives.append(
             Text(
-                f"Solución #{slot.item.puzzle.number}",
+                locale.solution_label(slot.item.puzzle.number),
                 slot.title_position,
                 _SOLUTION_TITLE_FONT_SIZE,
             )

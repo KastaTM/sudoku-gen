@@ -1,9 +1,8 @@
 """Ratchet test: no new hard-coded editorial text in the publication renderers.
 
-Until the locale resource layer (H3/WP1) exists, a few user-visible literals
-remain inside the renderers. They are listed in ``KNOWN_DEBT``. This test
-fails when a *new* literal appears (do not extend the pattern) and when an
-entry becomes stale (remove it from the list: the debt can only shrink).
+Editorial text lives in ``publication/locale.py`` (``BookLocale``). This test
+fails when a renderer embeds a literal word or re-cases a value instead of
+reading it from the locale. ``KNOWN_DEBT`` is empty and must stay empty.
 """
 
 from __future__ import annotations
@@ -19,22 +18,9 @@ TEXT_KEYWORDS = frozenset({"heading", "text", "title", "label"})
 CASE_METHODS = frozenset({"title", "upper", "capitalize"})
 LETTER = re.compile(r"[^\W\d_]")
 
-# (module, source of the text expression). Owner: H3/WP1 (BookLocale).
-KNOWN_DEBT: frozenset[tuple[str, str]] = frozenset(
-    {
-        ("front_render.py", "'Información'"),
-        ("front_render.py", "'Instrucciones'"),
-        ("front_render.py", "'Contenido'"),
-        ("page_render.py", "'SUDOKUS'"),
-        ("page_render.py", "f'Sudoku #{slot.item.puzzle.number}'"),
-        (
-            "page_render.py",
-            "slot.item.puzzle.difficulty_report.difficulty.value.title()",
-        ),
-        ("solution_render.py", "'SOLUCIONES'"),
-        ("solution_render.py", "f'Solución #{slot.item.puzzle.number}'"),
-    }
-)
+# (module, source of the text expression). Empty since H3/WP1a: all
+# editorial text comes from BookLocale. Do not add entries.
+KNOWN_DEBT: frozenset[tuple[str, str]] = frozenset()
 
 
 def _is_editorial_expression(node: ast.expr) -> bool:

@@ -17,6 +17,7 @@ the status, and what it changes.
 | D-007 | 2026-11-14 | Imprint / author name for cover, copyright and metadata | Promoter | **Pending** — must be resolved before the pilot cover (WP2) |
 | ADR-0003 | 2026-11-14 | Delegation model: the Orchestrator publishes a short step brief before each work package and proceeds unless the promoter objects; explicit approval only for the actions listed in D-004; every repeated manual step becomes an automation candidate | Promoter (intent), Orchestrator (design) | Accepted |
 | ADR-0004 | 2026-11-14 | Workflow automation: deterministic checks live in CI, tests and hooks, not in agent turns; delegated work is tiered by model (small for mechanical checks, mid-tier by default, top-tier for architecture and independent review); agents load `docs/CONTEXT_CORE.md` instead of the full context document; decision and risk logs live in the repository | Orchestrator, proposed to promoter | Accepted (no objection) |
+| ADR-0005 | 2026-11-14 | Editorial text lives in `BookLocale` (`publication/locale.py`); `es-ES` complete, `en-US` test-only; no fallback; the Spanish interior reference hash changes because the difficulty label is now Spanish | Orchestrator (design), promoter (D-001) | Accepted |
 
 ## ADR-0001 — Baseline of record
 
@@ -94,3 +95,20 @@ green CI) except for major version bumps, which the Orchestrator reviews.
 (small model), `engineer` and `publication-qa` and `market-researcher`
 (mid-tier) and `reviewer` (top tier, read-only). Finance, data, revenue and
 growth stay as templates until there are sales data (H5/H6).
+
+## ADR-0005 — BookLocale and new reference hash
+
+**Context.** Eight editorial literals lived in the renderers and the
+difficulty label was English in a Spanish book (R15).
+
+**Decision.** All renderer-visible text comes from `BookLocale`. A locale
+that lacks any key cannot be built and an unknown code raises; there is no
+fallback. `PublicationJob.locale` defaults to `ES_ES` (D-001). `en-US` exists
+only to prove the layer works and is not reviewed by a native speaker.
+
+**Consequences.** Behavior change, intentional: the label `Easy` becomes
+`Fácil` (and Medium, Hard, Expert become Medio, Difícil, Experto). The
+reference hash of the phase 2.11 development book changes:
+`interior.pdf = 3f6ae31e6e7b1433d28ef584af77f2a05d6aa1bb1d49c769303cfbd9230c8b64`
+(previous: `68f65e4a…27b1`, see ADR-0001). `cover.pdf` is unchanged
+(`d626109e…85f5`). The cross-platform check of the new hash is the CI job.
