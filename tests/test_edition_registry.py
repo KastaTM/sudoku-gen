@@ -1,6 +1,7 @@
 """Edition registry: integrity, persistence and cross-edition exclusivity."""
 
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -9,13 +10,16 @@ from sudoku_gen.fingerprint import FingerprintMode
 from sudoku_gen.publication import (
     EditionRecord,
     EditionRegistry,
+    ManifestEnvironment,
     PublicationJob,
     PublicationResult,
     RegistryConflictError,
     append_edition,
     edition_record,
     load_registry,
+    publication_manifest,
     record_from_manifest,
+    register_manifest,
     run_publication,
 )
 
@@ -143,3 +147,111 @@ def test_record_from_real_manifest_and_reused_seed_is_rejected(
 def test_manifest_v1_cannot_be_registered() -> None:
     with pytest.raises(ValueError, match="schema_version 2"):
         record_from_manifest({"schema_version": 1}, "old-edition")
+
+
+def test_loader_rejects_bad_values_with_line_numbers() -> None:
+    good = json.dumps(record().as_dict())
+    cases = {
+        "not json": "{",
+        "not an object": "[1, 2]",
+        "null title": json.dumps({**record().as_dict(), "title": None}),
+        "numeric id": json.dumps({**record().as_dict(), "edition_id": 7}),
+        "bad locale": json.dumps({**record().as_dict(), "locale": "spanish"}),
+        "bool seed": json.dumps({**record().as_dict(), "seed": True}),
+    }
+    for label, line in cases.items():
+        with pytest.raises(ValueError, match="Registry line 2") as error:
+            EditionRegistry.from_jsonl(good + "\n" + line)
+        assert "None" not in str(error.value) or label != "null title", label
+
+
+def test_locked_registry_is_refused_and_untouched(tmp_path: Path) -> None:
+    path = tmp_path / "editions.jsonl"
+    append_edition(path, record())
+    before = path.read_bytes()
+    lock = tmp_path / "editions.jsonl.lock"
+    lock.write_text("")
+
+    with pytest.raises(RegistryConflictError) as error:
+        append_edition(path, record("pilot-es-002", 2, (digest("d"),)))
+
+    assert error.value.reason == "locked"
+    assert path.read_bytes() == before and lock.exists()
+    lock.unlink()
+    append_edition(path, record("pilot-es-002", 2, (digest("d"),)))
+
+
+def test_failed_replace_leaves_no_temp_or_lock_and_keeps_the_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / "editions.jsonl"
+    append_edition(path, record())
+    before = path.read_bytes()
+
+    def refuse(*_args: object, **_kwargs: object) -> None:
+        raise PermissionError("target is open elsewhere")
+
+    monkeypatch.setattr(os, "replace", refuse)
+    with pytest.raises(PermissionError):
+        append_edition(path, record("pilot-es-002", 2, (digest("d"),)))
+
+    assert path.read_bytes() == before
+    assert sorted(item.name for item in tmp_path.iterdir()) == ["editions.jsonl"]
+
+
+def release_manifest(
+    result: PublicationResult, **environment_changes: object
+) -> dict[str, object]:
+    environment = ManifestEnvironment(
+        generator_version="0.2.0",
+        git_sha=environment_changes.get("git_sha", "a" * 40),  # type: ignore[arg-type]
+        git_dirty=environment_changes.get("git_dirty", False),  # type: ignore[arg-type]
+        python_version="3.12.0",
+        platform="test",
+        dependencies=(),
+    )
+    return json.loads(publication_manifest(result, environment))
+
+
+def test_register_manifest_enforces_the_release_checks(
+    reference_result: PublicationResult, tmp_path: Path
+) -> None:
+    path = tmp_path / "editions.jsonl"
+    pdf = reference_result.interior_pdf
+
+    for changes, message in (
+        ({"git_sha": None}, "40-hex"),
+        ({"git_sha": "abc"}, "40-hex"),
+        ({"git_dirty": True}, "clean"),
+        ({"git_dirty": None}, "clean"),
+    ):
+        with pytest.raises(ValueError, match=message):
+            register_manifest(
+                path, release_manifest(reference_result, **changes), "ed-001", pdf
+            )
+    with pytest.raises(ValueError, match="does not match"):
+        register_manifest(path, release_manifest(reference_result), "ed-001", b"x")
+    blocked = release_manifest(reference_result) | {"preflight_blocking": True}
+    with pytest.raises(ValueError, match="preflight"):
+        register_manifest(path, blocked, "ed-001", pdf)
+    assert not path.exists()
+
+    registry = register_manifest(
+        path, release_manifest(reference_result), "ed-001", pdf
+    )
+    assert len(registry.editions) == 1
+    assert load_registry(path) == registry
+
+
+def test_register_manifest_rejects_an_edition_built_against_a_stale_registry(
+    reference_result: PublicationResult, tmp_path: Path
+) -> None:
+    path = tmp_path / "editions.jsonl"
+    append_edition(path, record())
+    manifest = release_manifest(reference_result)
+
+    with pytest.raises(RegistryConflictError) as error:
+        register_manifest(path, manifest, "ed-001", reference_result.interior_pdf)
+
+    assert error.value.reason == "stale_registry"
+    assert len(load_registry(path).editions) == 1

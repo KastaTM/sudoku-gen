@@ -1,9 +1,11 @@
 """Bounded deterministic orchestration from publication configuration to artifacts."""
 
 import json
+from collections.abc import Mapping
 from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import Path
+from typing import Any
 
 from sudoku_gen.difficulty import Difficulty
 from sudoku_gen.exceptions import DuplicatePublicationPuzzleError
@@ -22,6 +24,7 @@ from sudoku_gen.publication.cover import (
     render_cover_pdf,
     validate_cover_pdf,
 )
+from sudoku_gen.publication.geometry import PhysicalPageSize
 from sudoku_gen.publication.interior import (
     FrontMatterConfig,
     InteriorPlan,
@@ -32,7 +35,7 @@ from sudoku_gen.publication.interior_pdf import (
     render_interior_drawings,
     render_interior_pdf,
 )
-from sudoku_gen.publication.locale import ES_ES, BookLocale
+from sudoku_gen.publication.locale import ES_ES, BookLocale, get_book_locale
 from sudoku_gen.publication.manifest import (
     ManifestEnvironment,
     collect_environment,
@@ -50,6 +53,7 @@ from sudoku_gen.publication.registry import (
     EditionRegistry,
     RegistryConflictError,
     record_from_manifest,
+    registry_digest,
 )
 from sudoku_gen.quality import (
     BatchAuditReport,
@@ -299,9 +303,122 @@ def publication_manifest(
         "cover_height_points": result.cover_plan.geometry.canvas.height,
         "spine_width_points": result.cover_plan.geometry.spine.width,
         "preflight_blocking": result.interior_preflight.has_blocking_issues,
+        "job": job_to_dict(result.job),
+        "job_sha256": job_digest(result.job),
+        "registry": {
+            "sha256": registry_digest(result.job.registry),
+            "edition_count": len(result.job.registry.editions),
+        },
         "environment": environment.as_dict(),
     }
     return json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+
+
+def job_to_dict(job: PublicationJob) -> dict[str, object]:
+    """Every input that shapes the puzzles or the PDF bytes, JSON-ready.
+
+    The edition registry is not part of the job block: the manifest records
+    its digest separately.
+    """
+    profile = job.print_profile
+    return {
+        "metadata": {
+            "title": job.metadata.title,
+            "subtitle": job.metadata.subtitle,
+            "author": job.metadata.author,
+            "copyright_notice": job.metadata.copyright_notice,
+            "instructions": job.metadata.instructions,
+        },
+        "sections": [
+            {
+                "title": spec.title,
+                "difficulty": spec.difficulty.value,
+                "count": spec.count,
+            }
+            for spec in job.sections
+        ],
+        "seed": job.seed,
+        "front_matter": {
+            "include_title_page": job.front_matter.include_title_page,
+            "include_copyright_page": job.front_matter.include_copyright_page,
+            "include_instructions_page": job.front_matter.include_instructions_page,
+            "include_contents_page": job.front_matter.include_contents_page,
+        },
+        "target_clues": job.target_clues,
+        "symmetry": job.symmetry.value,
+        "deduplication_mode": job.deduplication_mode.value,
+        "max_attempts": job.max_attempts,
+        "max_section_regenerations": job.max_section_regenerations,
+        "strategy": job.strategy.value,
+        "page_layout": {
+            "puzzles_per_page": job.page_layout.puzzles_per_page,
+            "solutions_per_page": job.page_layout.solutions_per_page,
+            "first_page_number": job.page_layout.first_page_number,
+        },
+        "print_profile": {
+            "trim_width_points": profile.trim_size.width,
+            "trim_height_points": profile.trim_size.height,
+            "bleed": profile.bleed,
+            "minimum_page_count": profile.minimum_page_count,
+            "maximum_page_count": profile.maximum_page_count,
+            "page_size_tolerance": profile.page_size_tolerance,
+            "outside_margin": profile.outside_margin,
+            "top_margin": profile.top_margin,
+            "bottom_margin": profile.bottom_margin,
+            "minimum_line_width": profile.minimum_line_width,
+            "minimum_text_size": profile.minimum_text_size,
+        },
+        "cover_content": {
+            "back_cover_copy": job.cover_content.back_cover_copy,
+            "spine_text": job.cover_content.spine_text,
+        },
+        "locale": job.locale.code,
+    }
+
+
+def job_digest(job: PublicationJob) -> str:
+    """SHA-256 of the canonical JSON of :func:`job_to_dict`."""
+    canonical = json.dumps(job_to_dict(job), sort_keys=True, separators=(",", ":"))
+    return sha256(canonical.encode()).hexdigest()
+
+
+def job_from_dict(
+    data: Mapping[str, Any], registry: EditionRegistry | None = None
+) -> PublicationJob:
+    """Rebuild a job from a manifest ``job`` block (the inverse of job_to_dict)."""
+    meta = data["metadata"]
+    profile = data["print_profile"]
+    return PublicationJob(
+        metadata=PublicationMetadata(**meta),
+        sections=tuple(
+            PublicationSectionSpec(
+                item["title"], Difficulty(item["difficulty"]), item["count"]
+            )
+            for item in data["sections"]
+        ),
+        seed=data["seed"],
+        front_matter=FrontMatterConfig(**data["front_matter"]),
+        target_clues=data["target_clues"],
+        symmetry=Symmetry(data["symmetry"]),
+        deduplication_mode=FingerprintMode(data["deduplication_mode"]),
+        max_attempts=data["max_attempts"],
+        max_section_regenerations=data["max_section_regenerations"],
+        strategy=DifficultyGenerationStrategy(data["strategy"]),
+        page_layout=PageLayoutProfile(**data["page_layout"]),
+        print_profile=PrintProfile(
+            trim_size=PhysicalPageSize(
+                profile["trim_width_points"], profile["trim_height_points"]
+            ),
+            **{
+                key: value
+                for key, value in profile.items()
+                if key not in ("trim_width_points", "trim_height_points")
+            },
+        ),
+        cover_content=CoverContent(**data["cover_content"]),
+        locale=get_book_locale(data["locale"]),
+        registry=registry if registry is not None else EditionRegistry(),
+    )
 
 
 def export_publication(result: PublicationResult, directory: Path) -> None:

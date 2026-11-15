@@ -10,6 +10,9 @@ from sudoku_gen.fingerprint import fingerprint_puzzle
 from sudoku_gen.human_solver import LogicalSolveStatus
 from sudoku_gen.models import Grid, SudokuPuzzle
 from sudoku_gen.publication import (
+    EN_US,
+    ES_ES,
+    BookLocale,
     Line,
     PhysicalPageLayout,
     PhysicalPageSize,
@@ -266,3 +269,19 @@ def test_complete_page_svg_is_valid_and_has_expected_page_elements() -> None:
         "3",
         "9",
     )
+
+
+@pytest.mark.parametrize("locale", [ES_ES, EN_US], ids=["es-ES", "en-US"])
+@pytest.mark.parametrize(
+    "difficulty",
+    [Difficulty.EASY, Difficulty.MEDIUM, Difficulty.HARD, Difficulty.EXPERT],
+)
+def test_every_difficulty_label_comes_from_the_locale(
+    locale: BookLocale, difficulty: Difficulty
+) -> None:
+    page = make_page(2, page_number=3, difficulties=(difficulty, difficulty))
+    drawing = render_puzzle_page(page, PhysicalPageLayout(), locale=locale)
+    contents = [item.content for item in drawing.primitives if isinstance(item, Text)]
+
+    assert contents.count(locale.difficulty_label(difficulty)) == 2
+    assert locale.puzzle_page_header in contents

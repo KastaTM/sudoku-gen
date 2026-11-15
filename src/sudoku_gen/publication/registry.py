@@ -11,8 +11,10 @@ from __future__ import annotations
 import json
 import os
 import re
+import tempfile
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
+from hashlib import sha256
 from pathlib import Path
 
 from sudoku_gen.exceptions import PublicationError
@@ -20,6 +22,8 @@ from sudoku_gen.fingerprint import FingerprintMode
 
 _EDITION_ID = re.compile(r"^[a-z0-9][a-z0-9._-]{2,63}$")
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
+_LOCALE = re.compile(r"^[a-z]{2}-[A-Z]{2}$")
+_GIT_SHA = re.compile(r"^[0-9a-f]{40}$")
 
 
 class RegistryConflictError(PublicationError):
@@ -49,8 +53,8 @@ class EditionRecord:
             raise ValueError("edition_id must be 3-64 chars of [a-z0-9._-].")
         if not isinstance(self.title, str) or not self.title.strip():
             raise ValueError("title must be a nonempty string.")
-        if not isinstance(self.locale, str) or not self.locale:
-            raise ValueError("locale must be a nonempty string.")
+        if not isinstance(self.locale, str) or not _LOCALE.match(self.locale):
+            raise ValueError("locale must look like 'es-ES'.")
         if type(self.seed) is not int:
             raise TypeError("seed must be a built-in integer.")
         if not isinstance(self.deduplication_mode, FingerprintMode):
@@ -83,22 +87,28 @@ class EditionRecord:
         }
 
     @classmethod
-    def from_dict(cls, data: Mapping[str, object]) -> EditionRecord:
-        try:
-            fingerprints = data["puzzle_fingerprints"]
-            if not isinstance(fingerprints, list):
-                raise TypeError("puzzle_fingerprints must be a list.")
-            return cls(
-                edition_id=str(data["edition_id"]),
-                title=str(data["title"]),
-                locale=str(data["locale"]),
-                seed=data["seed"],  # type: ignore[arg-type]
-                deduplication_mode=FingerprintMode(data["deduplication_mode"]),
-                puzzle_fingerprints=tuple(fingerprints),
-                interior_sha256=str(data["interior_sha256"]),
-            )
-        except KeyError as error:
-            raise ValueError(f"Registry record lacks field {error}.") from None
+    def from_dict(cls, data: object) -> EditionRecord:
+        if not isinstance(data, dict):
+            raise ValueError("A registry record must be a JSON object.")
+        for key in ("edition_id", "title", "locale", "interior_sha256"):
+            if not isinstance(data.get(key), str):
+                raise ValueError(f"Registry field {key!r} must be a string.")
+        fingerprints = data.get("puzzle_fingerprints")
+        if not isinstance(fingerprints, list):
+            raise ValueError("Registry field 'puzzle_fingerprints' must be a list.")
+        if "seed" not in data:
+            raise ValueError("Registry record lacks field 'seed'.")
+        if "deduplication_mode" not in data:
+            raise ValueError("Registry record lacks field 'deduplication_mode'.")
+        return cls(
+            edition_id=data["edition_id"],
+            title=data["title"],
+            locale=data["locale"],
+            seed=data["seed"],
+            deduplication_mode=FingerprintMode(data["deduplication_mode"]),
+            puzzle_fingerprints=tuple(fingerprints),
+            interior_sha256=data["interior_sha256"],
+        )
 
 
 def record_from_manifest(
@@ -197,12 +207,20 @@ class EditionRegistry:
 
     @classmethod
     def from_jsonl(cls, text: str) -> EditionRegistry:
-        records = tuple(
-            EditionRecord.from_dict(json.loads(line))
-            for line in text.splitlines()
-            if line.strip()
-        )
-        return cls(records)
+        records: list[EditionRecord] = []
+        for number, line in enumerate(text.splitlines(), start=1):
+            if not line.strip():
+                continue
+            try:
+                records.append(EditionRecord.from_dict(json.loads(line)))
+            except (ValueError, TypeError) as error:
+                raise ValueError(f"Registry line {number}: {error}") from None
+        return cls(tuple(records))
+
+
+def registry_digest(registry: EditionRegistry) -> str:
+    """SHA-256 of the canonical registry text; identifies the exact catalogue."""
+    return sha256(registry.to_jsonl().encode()).hexdigest()
 
 
 def load_registry(path: Path) -> EditionRegistry:
@@ -213,12 +231,80 @@ def load_registry(path: Path) -> EditionRegistry:
 
 
 def append_edition(path: Path, record: EditionRecord) -> EditionRegistry:
-    """Validate and persist ``record``; on conflict the file is untouched."""
+    """Validate and persist ``record`` under an exclusive lock.
+
+    The lock file ``<name>.lock`` is created exclusively; a concurrent writer
+    (or a stale lock to remove by hand) raises ``RegistryConflictError`` with
+    reason ``locked``. The new content goes to a uniquely named temporary file
+    in the same directory, is flushed to disk and then atomically replaces the
+    registry. On any failure the registry is untouched and no temporary file
+    remains.
+    """
     if not isinstance(path, Path):
         raise TypeError("path must be a pathlib.Path.")
+    lock = path.with_name(f"{path.name}.lock")
+    try:
+        descriptor = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+    except FileExistsError:
+        raise RegistryConflictError(
+            "locked", f"Registry is locked by {lock.name}; remove it if stale."
+        ) from None
+    os.close(descriptor)
+    temporary: Path | None = None
+    try:
+        current = load_registry(path) if path.exists() else EditionRegistry()
+        updated = current.register(record)
+        handle, name = tempfile.mkstemp(
+            dir=path.parent, prefix=f"{path.name}.", suffix=".tmp"
+        )
+        temporary = Path(name)
+        with os.fdopen(handle, "w", encoding="utf-8", newline="\n") as stream:
+            stream.write(updated.to_jsonl())
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, path)
+        temporary = None
+        return updated
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+        lock.unlink(missing_ok=True)
+
+
+def register_manifest(
+    path: Path,
+    manifest: Mapping[str, object],
+    edition_id: str,
+    interior_pdf: bytes,
+) -> EditionRegistry:
+    """Register an approved edition after the release checks (ADR-0006/0007).
+
+    Rejects a manifest that is not schema v2, has blocking preflight issues,
+    lacks a clean 40-hex git SHA, does not match the interior PDF actually
+    submitted, or was built against a registry other than the current one.
+    """
+    if manifest.get("schema_version") != 2:
+        raise ValueError("Only schema_version 2 manifests can be registered.")
+    if manifest.get("preflight_blocking") is not False:
+        raise ValueError("A manifest with blocking preflight issues is not sellable.")
+    environment = manifest.get("environment")
+    if not isinstance(environment, dict):
+        raise ValueError("Manifest lacks an environment block.")
+    sha = environment.get("git_sha")
+    if not isinstance(sha, str) or not _GIT_SHA.match(sha):
+        raise ValueError("Release manifest needs a 40-hex git_sha.")
+    if environment.get("git_dirty") is not False:
+        raise ValueError("Release manifest must be built from a clean git tree.")
+    if sha256(interior_pdf).hexdigest() != manifest.get("interior_sha256"):
+        raise ValueError("The interior PDF does not match the manifest hash.")
     current = load_registry(path) if path.exists() else EditionRegistry()
-    updated = current.register(record)
-    temporary = path.with_name(f"{path.name}.tmp")
-    temporary.write_text(updated.to_jsonl(), encoding="utf-8", newline="\n")
-    os.replace(temporary, path)
-    return updated
+    recorded = manifest.get("registry")
+    if not isinstance(recorded, dict) or recorded.get("sha256") != registry_digest(
+        current
+    ):
+        raise RegistryConflictError(
+            "stale_registry",
+            "The edition was built against a different registry; rebuild it "
+            "with the current catalog/editions.jsonl loaded.",
+        )
+    return append_edition(path, record_from_manifest(manifest, edition_id))

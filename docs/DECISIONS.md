@@ -19,6 +19,7 @@ the status, and what it changes.
 | ADR-0004 | 2026-11-14 | Workflow automation: deterministic checks live in CI, tests and hooks, not in agent turns; delegated work is tiered by model (small for mechanical checks, mid-tier by default, top-tier for architecture and independent review); agents load `docs/CONTEXT_CORE.md` instead of the full context document; decision and risk logs live in the repository | Orchestrator, proposed to promoter | Accepted (no objection) |
 | ADR-0005 | 2026-11-14 | Editorial text lives in `BookLocale` (`publication/locale.py`); `es-ES` complete, `en-US` test-only; no fallback; the Spanish interior reference hash changes because the difficulty label is now Spanish | Orchestrator (design), promoter (D-001) | Accepted |
 | ADR-0006 | 2026-11-15 | Manifest schema v2: reproduction inputs and output hashes are deterministic; build facts live in a separate informational `environment` block that may differ per machine | Orchestrator (design) | Accepted |
+| D-008 | 2026-11-15 | What counts as the 'same puzzle' for D-006: identical up to digit relabeling only (current `DIGIT_NORMALIZED`), or also up to rotation, reflection and transposition | Promoter | **Pending** — current behavior is digit relabeling only |
 | ADR-0007 | 2026-11-15 | Edition registry: append-only JSON Lines file `catalog/editions.jsonl`; a job given a registry rejects a reused seed and regenerates sections with registered puzzles; the development example is never registered | Orchestrator (design), promoter (D-006) | Accepted |
 
 ## ADR-0001 — Baseline of record
@@ -154,3 +155,36 @@ manifest (`scripts/register_edition.py`) in a pull request, only after the
 promoter approves publication. Reusing a seed with a different configuration
 is also rejected: pick a new seed. Open: how the pipeline obliges real
 editions to pass the registry (a release script) is part of WP2.
+
+## Amendment 2026-11-15 — independent review of WP1a-c
+
+An independent review (reviewer agent, Opus) returned REQUEST CHANGES. Seven
+confirmed findings were fixed in WP1d; two statuses claimed earlier were
+overstated and are corrected in the risk register (R02 now *Mitigating*).
+
+- **ADR-0006 (manifest).** The manifest now also records a `job` block with
+  every `PublicationJob` input (metadata, sections, seed, front matter, clue
+  target, symmetry, mode, attempt and regeneration budgets, strategy, page
+  layout, full print profile, cover content, locale), `job_sha256`, and a
+  `registry` block (`sha256`, `edition_count`). A test rebuilds the reference
+  edition from its manifest and obtains identical PDF hashes. A
+  `SUDOKU_GEN_GIT_SHA` value is used only if it is 40 hex characters.
+  `git_sha` is the code identity; `generator_version` can be stale under an
+  editable install.
+- **ADR-0007 (registry).** Building without the registry is still possible
+  (development runs), but registration is the enforcement point:
+  `register_manifest` rejects a manifest that is not v2, has blocking
+  preflight issues, lacks a clean 40-hex `git_sha` with `git_dirty: false`,
+  does not match the interior PDF actually submitted, or was built against a
+  registry whose digest differs from the current file. `append_edition` takes
+  an exclusive lock file, writes a uniquely named temporary file, flushes it
+  and replaces the registry atomically; any failure leaves the file untouched
+  and no temporary file behind. The loader accepts only well-typed records and
+  reports the line number of an error.
+- **Ratchet test.** It now scans every `publication/` module, but only
+  `Text(...)` first arguments and `heading=` keywords, so a future renderer
+  with another name is covered.
+- **Open (D-008).** The registry detects puzzles equal up to digit relabeling.
+  Whether a rotated or mirrored copy counts as the same puzzle needs a
+  promoter decision.
+
