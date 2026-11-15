@@ -1,8 +1,9 @@
 """Ratchet test: no new hard-coded editorial text in the publication renderers.
 
 Editorial text lives in ``publication/locale.py`` (``BookLocale``). This test
-fails when a renderer embeds a literal word or re-cases a value instead of
-reading it from the locale. ``KNOWN_DEBT`` is empty and must stay empty.
+fails when a renderer module (``*render*.py`` or ``cover.py``) embeds a
+literal word or re-cases a value instead of reading it from the locale.
+``KNOWN_DEBT`` is empty and must stay empty.
 """
 
 from __future__ import annotations
@@ -53,9 +54,15 @@ def _text_expressions(call: ast.Call) -> list[ast.expr]:
     return expressions
 
 
+def _renderer_modules() -> list[Path]:
+    """Modules that draw text: every ``*render*.py`` plus the cover."""
+    paths = {*PUBLICATION_DIR.glob("*render*.py"), PUBLICATION_DIR / "cover.py"}
+    return sorted(path for path in paths if path.exists())
+
+
 def _find_editorial_literals() -> set[tuple[str, str]]:
     found: set[tuple[str, str]] = set()
-    for path in sorted(PUBLICATION_DIR.glob("*.py")):
+    for path in _renderer_modules():
         tree = ast.parse(path.read_text(encoding="utf-8"))
         for node in ast.walk(tree):
             if not isinstance(node, ast.Call):

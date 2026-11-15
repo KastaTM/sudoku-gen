@@ -821,9 +821,17 @@ produced identical PDF hashes on Linux/Python 3.13 and on CI (Ubuntu, Python 3.1
 (`interior.pdf` `3f6ae31e…8b64`, `cover.pdf` `d626109e…85f5`); the new interior
 hash is NOT VERIFIED on Windows (see ADR-0005).
 
-Known limitations, tracked in [docs/ROADMAP.md](docs/ROADMAP.md): deduplication
-is per-job only, with no registry across editions (WP1c); no barcode is drawn;
-and a local pass is not an approval by Amazon KDP. Editorial text comes from
+Cross-edition exclusivity (D-006): load the registry and pass it to the job.
+`run_publication` rejects a reused base seed and regenerates, within the
+regeneration budget, any section containing a registered puzzle. Register an
+approved edition from its manifest with
+`uv run python scripts/register_edition.py <manifest.json> <edition-id>`.
+See [catalog/README.md](catalog/README.md).
+
+Known limitations, tracked in [docs/ROADMAP.md](docs/ROADMAP.md): the
+cross-edition registry (`catalog/editions.jsonl`) is empty until the first
+edition is approved and a job only uses it when `PublicationJob.registry` is
+set; no barcode is drawn; and a local pass is not an approval by Amazon KDP. Editorial text comes from
 `BookLocale` (`es-ES` complete, `en-US` test-only).
 
 ## Development setup
@@ -969,6 +977,7 @@ tests/test_print_ready_interior.py  Print-safe interior and margins
 tests/test_interior.py       Front matter and interior planning
 tests/test_cover.py          Cover planning, rendering, validation
 tests/test_publication_pipeline.py  End-to-end job, manifest, export
+tests/test_edition_registry.py      Edition registry, catalogue, exclusivity
 docs/ROADMAP.md              Milestones, status, and exit criteria
 docs/DECISIONS.md            Decision log and ADRs
 docs/RISK_REGISTER.md        Risks, owners, and mitigations

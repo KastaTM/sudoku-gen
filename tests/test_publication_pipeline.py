@@ -1,6 +1,7 @@
 """Focused deterministic configuration and regeneration-budget pipeline tests."""
 
 import json
+from dataclasses import replace
 from hashlib import sha256
 from pathlib import Path
 
@@ -16,6 +17,8 @@ from sudoku_gen.publication import (
     BookSectionInput,
     CoverContent,
     CoverReport,
+    EditionRecord,
+    EditionRegistry,
     FrontMatterConfig,
     PageLayoutProfile,
     PublicationJob,
@@ -192,6 +195,68 @@ def test_persistent_collision_exhausts_exact_regeneration_budget(
         run_publication(job(regenerations=budget))
     assert len(calls) == expected_calls
     assert calls[0] == section_seed(99, 0)
+
+
+def test_registered_puzzle_regenerates_only_the_conflicting_section(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    patch_final_stages(monkeypatch)
+    registered = batch(2).items[0].fingerprint.value
+    registry = EditionRegistry(
+        (
+            EditionRecord(
+                "other-edition",
+                "Other",
+                "es-ES",
+                1,
+                FingerprintMode.DIGIT_NORMALIZED,
+                (registered,),
+                "0" * 64,
+            ),
+        )
+    )
+    calls: list[int] = []
+    batches = iter((batch(0), batch(2), batch(1)))
+    monkeypatch.setattr(
+        pipeline,
+        "generate_puzzle_batch",
+        lambda *args, **kwargs: calls.append(kwargs["seed"]) or next(batches),
+    )
+
+    result = run_publication(replace(job(), registry=registry))
+
+    assert calls == [section_seed(99, 0), section_seed(99, 1), section_seed(99, 1, 1)]
+    assert result.section_regenerations == (0, 1)
+
+
+def test_persistent_registry_conflict_exhausts_budget(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    patch_final_stages(monkeypatch)
+    registered = batch(0).items[0].fingerprint.value
+    registry = EditionRegistry(
+        (
+            EditionRecord(
+                "other-edition",
+                "Other",
+                "es-ES",
+                1,
+                FingerprintMode.DIGIT_NORMALIZED,
+                (registered,),
+                "0" * 64,
+            ),
+        )
+    )
+    calls: list[int] = []
+    monkeypatch.setattr(
+        pipeline,
+        "generate_puzzle_batch",
+        lambda *args, **kwargs: calls.append(kwargs["seed"]) or batch(0),
+    )
+
+    with pytest.raises(ValueError, match="cross-edition regeneration budget"):
+        run_publication(replace(job(regenerations=2), registry=registry))
+    assert len(calls) == 3
 
 
 def test_staged_export_writes_four_files_and_refuses_existing_target(

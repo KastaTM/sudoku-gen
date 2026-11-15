@@ -90,6 +90,7 @@ from sudoku_gen.publication.pipeline import (
     PublicationJob,
     PublicationResult,
     PublicationSectionSpec,
+    edition_record,
     export_publication,
     publication_manifest,
     run_publication,
@@ -102,6 +103,14 @@ from sudoku_gen.publication.preflight import (
     PreflightSeverity,
     PrintProfile,
     preflight_pdf,
+)
+from sudoku_gen.publication.registry import (
+    EditionRecord,
+    EditionRegistry,
+    RegistryConflictError,
+    append_edition,
+    load_registry,
+    record_from_manifest,
 )
 from sudoku_gen.publication.render import (
     Line,
@@ -121,6 +130,13 @@ from sudoku_gen.publication.solution_render import (
 )
 
 __all__ = (
+    "EditionRecord",
+    "EditionRegistry",
+    "RegistryConflictError",
+    "append_edition",
+    "edition_record",
+    "load_registry",
+    "record_from_manifest",
     "ManifestEnvironment",
     "collect_environment",
     "font_identity",

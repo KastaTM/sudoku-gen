@@ -19,6 +19,7 @@ the status, and what it changes.
 | ADR-0004 | 2026-11-14 | Workflow automation: deterministic checks live in CI, tests and hooks, not in agent turns; delegated work is tiered by model (small for mechanical checks, mid-tier by default, top-tier for architecture and independent review); agents load `docs/CONTEXT_CORE.md` instead of the full context document; decision and risk logs live in the repository | Orchestrator, proposed to promoter | Accepted (no objection) |
 | ADR-0005 | 2026-11-14 | Editorial text lives in `BookLocale` (`publication/locale.py`); `es-ES` complete, `en-US` test-only; no fallback; the Spanish interior reference hash changes because the difficulty label is now Spanish | Orchestrator (design), promoter (D-001) | Accepted |
 | ADR-0006 | 2026-11-15 | Manifest schema v2: reproduction inputs and output hashes are deterministic; build facts live in a separate informational `environment` block that may differ per machine | Orchestrator (design) | Accepted |
+| ADR-0007 | 2026-11-15 | Edition registry: append-only JSON Lines file `catalog/editions.jsonl`; a job given a registry rejects a reused seed and regenerates sections with registered puzzles; the development example is never registered | Orchestrator (design), promoter (D-006) | Accepted |
 
 ## ADR-0001 — Baseline of record
 
@@ -131,3 +132,25 @@ unavailable facts are `null`, never an error. The git SHA comes from
 environment when omitted; tests inject one to stay deterministic. A release
 manifest with `git_dirty: true` or `git_sha: null` must not be accepted for
 sale. WP1c reuses the fingerprints for the edition registry.
+
+## ADR-0007 — Edition registry
+
+**Context.** D-006 makes puzzles exclusive per SKU across editions and
+languages, but deduplication was per job only (R02).
+
+**Decision.** `catalog/editions.jsonl` is an append-only JSON Lines file, one
+edition per line: id, title, locale, seed, fingerprint mode, puzzle
+fingerprints, interior SHA-256. It is validated on load (duplicate id, seed,
+fingerprint or mixed modes are errors). `PublicationJob.registry` defaults to
+an empty registry so development runs work; a real edition loads the file with
+`load_registry`. Two rules apply: (1) a job whose base seed equals a
+registered seed is rejected before generation; (2) a section containing a
+registered puzzle is regenerated within the existing budget, and the job fails
+when the budget is exhausted. Fingerprints are compared only in one mode; a
+registry in another mode than the job is an error.
+
+**Consequences.** Registration is a release step taken from the schema-v2
+manifest (`scripts/register_edition.py`) in a pull request, only after the
+promoter approves publication. Reusing a seed with a different configuration
+is also rejected: pick a new seed. Open: how the pipeline obliges real
+editions to pass the registry (a release script) is part of WP2.

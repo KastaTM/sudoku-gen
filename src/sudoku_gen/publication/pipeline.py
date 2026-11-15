@@ -45,6 +45,12 @@ from sudoku_gen.publication.preflight import (
     PrintProfile,
     preflight_pdf,
 )
+from sudoku_gen.publication.registry import (
+    EditionRecord,
+    EditionRegistry,
+    RegistryConflictError,
+    record_from_manifest,
+)
 from sudoku_gen.quality import (
     BatchAuditReport,
     BatchQualityReport,
@@ -87,6 +93,7 @@ class PublicationJob:
     print_profile: PrintProfile = PrintProfile()
     cover_content: CoverContent = CoverContent()
     locale: BookLocale = ES_ES
+    registry: EditionRegistry = EditionRegistry()
 
     def __post_init__(self) -> None:
         if not isinstance(self.metadata, PublicationMetadata) or not self.sections:
@@ -99,6 +106,8 @@ class PublicationJob:
             raise TypeError("seed must be a built-in integer.")
         if not isinstance(self.locale, BookLocale):
             raise TypeError("locale must be a BookLocale.")
+        if not isinstance(self.registry, EditionRegistry):
+            raise TypeError("registry must be an EditionRegistry.")
         if type(self.max_section_regenerations) is not int:
             raise TypeError("max_section_regenerations must be a built-in integer.")
         if self.max_section_regenerations < 0:
@@ -142,6 +151,7 @@ def run_publication(job: PublicationJob) -> PublicationResult:
     """Generate, audit, plan, render, and validate one bounded publication job."""
     if not isinstance(job, PublicationJob):
         raise TypeError("job must be a PublicationJob.")
+    job.registry.check_job(job.seed, job.deduplication_mode)
     accepted: list[PuzzleBatch] = []
     seeds: list[int] = []
     regenerations: list[int] = []
@@ -169,10 +179,13 @@ def run_publication(job: PublicationJob) -> PublicationResult:
                     + (BookSectionInput(section.title, batch),),
                     deduplication_mode=job.deduplication_mode,
                 )
-            except DuplicatePublicationPuzzleError:
+                job.registry.ensure_disjoint(
+                    item.fingerprint.value for item in batch.items
+                )
+            except (DuplicatePublicationPuzzleError, RegistryConflictError):
                 if retry == job.max_section_regenerations:
                     raise ValueError(
-                        "Cross-section regeneration budget exhausted."
+                        "Cross-section or cross-edition regeneration budget exhausted."
                     ) from None
                 continue
             accepted.append(batch)
@@ -338,3 +351,8 @@ def export_publication(result: PublicationResult, directory: Path) -> None:
                 file.unlink()
             staging.rmdir()
         raise
+
+
+def edition_record(result: PublicationResult, edition_id: str) -> EditionRecord:
+    """Registry record of an approved edition, built from its v2 manifest."""
+    return record_from_manifest(json.loads(publication_manifest(result)), edition_id)
