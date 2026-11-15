@@ -51,6 +51,11 @@ from sudoku_gen.publication.locale import (
     available_book_locales,
     get_book_locale,
 )
+from sudoku_gen.publication.manifest import (
+    ManifestEnvironment,
+    collect_environment,
+    font_identity,
+)
 from sudoku_gen.publication.models import (
     BookPlan,
     BookPuzzle,
@@ -116,6 +121,9 @@ from sudoku_gen.publication.solution_render import (
 )
 
 __all__ = (
+    "ManifestEnvironment",
+    "collect_environment",
+    "font_identity",
     "EN_US",
     "ES_ES",
     "BookLocale",

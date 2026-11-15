@@ -806,7 +806,7 @@ a `.staging` sibling, then renames it atomically. It produces:
 | --- | --- |
 | `interior.pdf` | Print-ready interior, embedded Bitstream Vera, invariant mode |
 | `cover.pdf` | One-page paperback cover sized from the final page count |
-| `manifest.json` | `schema_version: 1`, title, author, seed, per-section seed/attempts/regenerations, page counts, spine width, cover size, SHA-256 of both PDFs, `preflight_blocking` |
+| `manifest.json` | `schema_version: 2`: title, author, locale, seed, deduplication mode, print profile, embedded font (name, file, SHA-256), per-section seed/attempts/regenerations and per-puzzle fingerprints, page counts, spine width, cover size, SHA-256 of both PDFs, `preflight_blocking`, and an informational `environment` block (engine version, git SHA and dirty flag, Python, platform, ReportLab and pypdf versions). Only `environment` varies between machines |
 | `quality-report.json` | Per-batch acceptance/rejection counts, audit result and issue codes, preflight and cover issue codes |
 
 Run the reference development book with:
@@ -817,15 +817,14 @@ uv run python scripts/create_phase_2_11_publication.py
 
 It writes the ignored `dev-output/phase-2.11-publication/` (28 pages, 36 Easy
 puzzles, seed `202611`). The output is byte-reproducible: the same inputs
-produced identical PDF hashes on Windows/Python 3.12 and Linux/Python 3.13
-(`interior.pdf` `3f6ae31e…8b64`, `cover.pdf` `d626109e…85f5`).
+produced identical PDF hashes on Linux/Python 3.13 and on CI (Ubuntu, Python 3.12)
+(`interior.pdf` `3f6ae31e…8b64`, `cover.pdf` `d626109e…85f5`); the new interior
+hash is NOT VERIFIED on Windows (see ADR-0005).
 
-Known limitations of this phase, tracked in [docs/ROADMAP.md](docs/ROADMAP.md):
-editorial labels are hard-coded (headers in Spanish, per-puzzle difficulty label
-in English); the manifest does not record the engine version, commit,
-dependency versions, font, or per-puzzle fingerprints; deduplication is
-per-job only, with no registry across editions; no barcode is drawn; and a local
-pass is not an approval by Amazon KDP.
+Known limitations, tracked in [docs/ROADMAP.md](docs/ROADMAP.md): deduplication
+is per-job only, with no registry across editions (WP1c); no barcode is drawn;
+and a local pass is not an approval by Amazon KDP. Editorial text comes from
+`BookLocale` (`es-ES` complete, `en-US` test-only).
 
 ## Development setup
 

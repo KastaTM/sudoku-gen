@@ -18,6 +18,7 @@ the status, and what it changes.
 | ADR-0003 | 2026-11-14 | Delegation model: the Orchestrator publishes a short step brief before each work package and proceeds unless the promoter objects; explicit approval only for the actions listed in D-004; every repeated manual step becomes an automation candidate | Promoter (intent), Orchestrator (design) | Accepted |
 | ADR-0004 | 2026-11-14 | Workflow automation: deterministic checks live in CI, tests and hooks, not in agent turns; delegated work is tiered by model (small for mechanical checks, mid-tier by default, top-tier for architecture and independent review); agents load `docs/CONTEXT_CORE.md` instead of the full context document; decision and risk logs live in the repository | Orchestrator, proposed to promoter | Accepted (no objection) |
 | ADR-0005 | 2026-11-14 | Editorial text lives in `BookLocale` (`publication/locale.py`); `es-ES` complete, `en-US` test-only; no fallback; the Spanish interior reference hash changes because the difficulty label is now Spanish | Orchestrator (design), promoter (D-001) | Accepted |
+| ADR-0006 | 2026-11-15 | Manifest schema v2: reproduction inputs and output hashes are deterministic; build facts live in a separate informational `environment` block that may differ per machine | Orchestrator (design) | Accepted |
 
 ## ADR-0001 — Baseline of record
 
@@ -112,3 +113,21 @@ reference hash of the phase 2.11 development book changes:
 `interior.pdf = 3f6ae31e6e7b1433d28ef584af77f2a05d6aa1bb1d49c769303cfbd9230c8b64`
 (previous: `68f65e4a…27b1`, see ADR-0001). `cover.pdf` is unchanged
 (`d626109e…85f5`). The cross-platform check of the new hash is the CI job.
+
+## ADR-0006 — Manifest schema v2
+
+**Context.** Manifest v1 could not identify the engine, commit, dependencies,
+font or puzzles of an edition (R14).
+
+**Decision.** `schema_version: 2` adds locale, deduplication mode, print
+profile, font identity, per-puzzle fingerprints and an `environment` block.
+Everything outside `environment` is an input of reproduction or an output
+hash and is deterministic. `environment` is informational and best-effort:
+unavailable facts are `null`, never an error. The git SHA comes from
+`SUDOKU_GEN_GIT_SHA` when set (then the dirty flag is unknown), otherwise from
+`git`; a dirty tree is recorded as `git_dirty: true`.
+
+**Consequences.** `publication_manifest(result, environment=None)` collects the
+environment when omitted; tests inject one to stay deterministic. A release
+manifest with `git_dirty: true` or `git_sha: null` must not be accepted for
+sale. WP1c reuses the fingerprints for the edition registry.
