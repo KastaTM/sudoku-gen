@@ -33,6 +33,11 @@ from sudoku_gen.publication.interior_pdf import (
     render_interior_pdf,
 )
 from sudoku_gen.publication.locale import ES_ES, BookLocale
+from sudoku_gen.publication.manifest import (
+    ManifestEnvironment,
+    collect_environment,
+    font_identity,
+)
 from sudoku_gen.publication.models import BookPlan, BookSectionInput, build_book_plan
 from sudoku_gen.publication.pages import PageLayoutProfile, PagePlan, plan_book_pages
 from sudoku_gen.publication.preflight import (
@@ -229,13 +234,31 @@ def run_publication(job: PublicationJob) -> PublicationResult:
     )
 
 
-def publication_manifest(result: PublicationResult) -> bytes:
-    """Return deterministic JSON describing final artifacts and reproducible inputs."""
+def publication_manifest(
+    result: PublicationResult, environment: ManifestEnvironment | None = None
+) -> bytes:
+    """Return deterministic JSON (schema v2) for final artifacts and inputs.
+
+    Everything except the ``environment`` block is a reproduction input or an
+    output hash. ``environment`` is informational and collected when omitted.
+    """
+    environment = environment if environment is not None else collect_environment()
+    profile = result.job.print_profile
     payload = {
-        "schema_version": 1,
+        "schema_version": 2,
         "title": result.job.metadata.title,
         "author": result.job.metadata.author,
+        "locale": result.job.locale.code,
         "seed": result.job.seed,
+        "deduplication_mode": result.job.deduplication_mode.value,
+        "print_profile": {
+            "trim_width_points": profile.trim_size.width,
+            "trim_height_points": profile.trim_size.height,
+            "bleed": profile.bleed,
+            "minimum_page_count": profile.minimum_page_count,
+            "maximum_page_count": profile.maximum_page_count,
+        },
+        "font": font_identity(),
         "sections": [
             {
                 "title": spec.title,
@@ -244,13 +267,17 @@ def publication_manifest(result: PublicationResult) -> bytes:
                 "seed": result.section_seeds[index],
                 "regenerations": result.section_regenerations[index],
                 "attempts": batch.attempts,
+                "puzzle_fingerprints": [
+                    puzzle.fingerprint.value
+                    for puzzle in result.book_plan.sections[index].puzzles
+                ],
             }
             for index, (spec, batch) in enumerate(
                 zip(result.job.sections, result.batches, strict=True)
             )
         ],
         "interior_page_count": result.interior_plan.physical_page_count,
-        "effective_page_count": result.job.print_profile.effective_page_count(
+        "effective_page_count": profile.effective_page_count(
             result.interior_plan.physical_page_count
         ),
         "interior_sha256": sha256(result.interior_pdf).hexdigest(),
@@ -259,6 +286,7 @@ def publication_manifest(result: PublicationResult) -> bytes:
         "cover_height_points": result.cover_plan.geometry.canvas.height,
         "spine_width_points": result.cover_plan.geometry.spine.width,
         "preflight_blocking": result.interior_preflight.has_blocking_issues,
+        "environment": environment.as_dict(),
     }
     return json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
 

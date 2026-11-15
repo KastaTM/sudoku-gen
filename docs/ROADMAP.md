@@ -42,8 +42,8 @@ purchase, FR/DE, UI/API/DB.
 
 ### WP1 — i18n and catalogue foundation (Technology)
 
-Progress: **WP1a (BookLocale) done in its pull request**; WP1b (manifest v2)
-and WP1c (edition registry) pending.
+Progress: **WP1a (BookLocale) done**; **WP1b (manifest v2) done in its pull
+request**; WP1c (edition registry) pending.
 
 - Editorial text resource layer (working name `BookLocale`) covering the
   seven hard-coded strings and the difficulty labels; `es-ES` complete,
