@@ -103,3 +103,9 @@ file is written under a lock. WP1 closes when WP1d is merged.
 | Expert (2 puzzles, 26 clues, `max_attempts=1500`) | 38 attempts, 13.2 s | not measured |
 
 A formal benchmark is part of WP2.
+
+## WP2 progress (2026-11-15)
+
+`docs/PILOT_BRIEF.md` and `docs/UNIT_ECONOMICS.md` drafted (PROPOSED). KDP
+economics confirmed from official pages; competitor data NOT VERIFIED; promoter
+decisions listed in the brief.
