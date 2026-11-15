@@ -13,7 +13,9 @@ NOT VERIFIED, not passed.
       (covered by the batch audit; spot-check three puzzles manually).
 - [ ] Requested difficulty matched for every section; no `UNRATED` puzzle.
 - [ ] Zero duplicate fingerprints inside the edition **and** against the
-      edition registry of all previous editions in every language
+      edition registry of all previous editions in every language (the
+      job was built with `load_registry` and the manifest's `registry.sha256`
+      matches the current `catalog/editions.jsonl`)
       (decision D-006). Registry entry prepared for this edition.
 - [ ] Generation parameters (seed, strategy, clue target, symmetry,
       deduplication mode) recorded in the manifest.

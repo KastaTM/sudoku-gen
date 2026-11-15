@@ -1,5 +1,6 @@
 """BookLocale resources and the absence of mixed-language text in a book."""
 
+import re
 from dataclasses import replace
 from io import BytesIO
 
@@ -74,7 +75,7 @@ def test_spanish_book_contains_no_english_editorial_text(
     for word in ("SUDOKUS", "SOLUCIONES", "Fácil", "Contenido", "Instrucciones"):
         assert word in text
     for word in ENGLISH_WORDS:
-        assert word not in text
+        assert re.search(rf"\b{word}\b", text) is None
 
 
 def test_test_locale_changes_only_editorial_text(

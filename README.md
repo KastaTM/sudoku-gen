@@ -806,7 +806,7 @@ a `.staging` sibling, then renames it atomically. It produces:
 | --- | --- |
 | `interior.pdf` | Print-ready interior, embedded Bitstream Vera, invariant mode |
 | `cover.pdf` | One-page paperback cover sized from the final page count |
-| `manifest.json` | `schema_version: 2`: title, author, locale, seed, deduplication mode, print profile, embedded font (name, file, SHA-256), per-section seed/attempts/regenerations and per-puzzle fingerprints, page counts, spine width, cover size, SHA-256 of both PDFs, `preflight_blocking`, and an informational `environment` block (engine version, git SHA and dirty flag, Python, platform, ReportLab and pypdf versions). Only `environment` varies between machines |
+| `manifest.json` | `schema_version: 2`: title, author, locale, seed, deduplication mode, print profile, embedded font (name, file, SHA-256), a `job` block with every input plus `job_sha256`, the registry digest, per-section seed/attempts/regenerations and per-puzzle fingerprints, page counts, spine width, cover size, SHA-256 of both PDFs, `preflight_blocking`, and an informational `environment` block (engine version, git SHA and dirty flag, Python, platform, ReportLab and pypdf versions). Only `environment` varies between machines |
 | `quality-report.json` | Per-batch acceptance/rejection counts, audit result and issue codes, preflight and cover issue codes |
 
 Run the reference development book with:
@@ -825,7 +825,8 @@ Cross-edition exclusivity (D-006): load the registry and pass it to the job.
 `run_publication` rejects a reused base seed and regenerates, within the
 regeneration budget, any section containing a registered puzzle. Register an
 approved edition from its manifest with
-`uv run python scripts/register_edition.py <manifest.json> <edition-id>`.
+`uv run python scripts/register_edition.py <manifest.json> <edition-id> --interior <interior.pdf>`
+(it checks the manifest, the PDF hash and the registry digest).
 See [catalog/README.md](catalog/README.md).
 
 Known limitations, tracked in [docs/ROADMAP.md](docs/ROADMAP.md): the

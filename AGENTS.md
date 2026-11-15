@@ -24,8 +24,8 @@ and maintainability over premature performance optimization.
 | --- | --- | --- |
 | H0 — Sudoku engine (historical phase 1) | Implemented | `src/sudoku_gen/*.py`, tests |
 | H1 — Editorial pipeline (historical phases 2.1–2.11) | Implemented | `src/sudoku_gen/publication/`, `scripts/create_phase_2_11_publication.py` |
-| H2 — Rebaseline and agentic governance | In progress | This file, `docs/` |
-| H3 — Pilot edition with foundational i18n | Approved, not started | `docs/ROADMAP.md` |
+| H2 — Rebaseline and agentic governance | Done (docs, CI, agents) | This file, `docs/`, `.github/`, `.claude/` |
+| H3 — Pilot edition with foundational i18n | In progress: WP1 (locale, manifest v2, edition registry) merged; WP2 (brief, economics, pilot) started | `docs/ROADMAP.md` |
 
 Baseline of record: tag `v0.2.0` = commit
 `c05ce0c858ac36e3d2dd35762856301c25cca856` (2026-09-24).
@@ -85,11 +85,9 @@ Dependency rules:
 - Difficulty analysis must remain independent from puzzle generation.
 - `publication/` consumes trusted engine results; it must not re-implement
   solving, rating, or fingerprinting.
-- Editorial text must not be hard-coded in renderers once the locale
-  resource layer (H3/WP1) exists; until then, treat the remaining
-  literals (`SUDOKUS`, `SOLUCIONES`, `Sudoku #`, `Solución #`,
-  `Información`, `Instrucciones`, `Contenido`, and the English
-  difficulty label) as known debt, not as a pattern to extend.
+- Editorial text must not be hard-coded in `publication/`: it comes from
+  `BookLocale` (`publication/locale.py`). `tests/test_editorial_literals.py`
+  fails on any literal word in a `Text(...)` or `heading=` argument.
 
 ## Determinism and reproducibility
 

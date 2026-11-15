@@ -13,7 +13,7 @@ Evidence labels: **CONFIRMED** (verified with reproducible evidence),
 | **H0 — Sudoku engine** (historical phase 1) | Technology | CONFIRMED in code and tests | Unique-solution puzzles, logical solver, trace-based difficulty, seeded batches, fingerprints, audits |
 | **H1 — Editorial pipeline** (historical phases 2.1–2.11) | Editorial / Technology | CONFIRMED in code; 28-page development book reproduces byte-for-byte across platforms | Interior + cover PDFs, manifest, quality report, local preflight |
 | **H2 — Rebaseline and agentic governance** | Orchestrator | H2a (audit, inventory, risks, contracts) done 2026-11-14 outside the repo; **H2b (this documentation repair + CI) in progress** | CI green on `main`; `AGENTS.md`/`README.md` aligned with 2.11; version 0.2.0; governance docs present; full test suite incl. Hypothesis executed in CI |
-| **H3 — Pilot edition with foundational i18n** | Orchestrator (Editorial, Technology, Product, Revenue/Finance) | APPROVED (decision D-004), not started | See `SGEN-H3` below |
+| **H3 — Pilot edition with foundational i18n** | Orchestrator (Editorial, Technology, Product, Revenue/Finance) | APPROVED (decision D-004); WP0 and WP1 done, WP2 started | See `SGEN-H3` below |
 | **H4 — Structural i18n and reproducible catalogue** | Expansion / Technology | Pending; reduced to what H3 does not cover | FR/DE test books pass preflight and native review; cross-book duplicate query available |
 | **H5 — First validated launch** | Editorial / Revenue / Promoter | Pending | Edition published with promoter approval, KDP Print Previewer + Cover Calculator + author copy passed, exact file hashes recorded |
 | **H6 — Measurement and learning** | Data / Finance / Growth | Pending | Report with units, net revenue, contribution margin and a signed `scale / iterate / stop` decision within an agreed horizon |
@@ -43,7 +43,10 @@ purchase, FR/DE, UI/API/DB.
 ### WP1 — i18n and catalogue foundation (Technology)
 
 Progress: **WP1a (BookLocale) done**; **WP1b (manifest v2) done**; **WP1c
-(edition registry) done in its pull request**. WP1 closes when it is merged.
+(edition registry) done**. An independent review of WP1a-c (2026-11-15) led to
+WP1d, a hardening change: the manifest records every job input and the
+registry digest, registration enforces the release checks, and the registry
+file is written under a lock. WP1 closes when WP1d is merged.
 
 - Editorial text resource layer (working name `BookLocale`) covering the
   seven hard-coded strings and the difficulty labels; `es-ES` complete,

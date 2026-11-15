@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import os
 import platform
+import re
 import subprocess
 from dataclasses import dataclass
 from hashlib import sha256
@@ -21,6 +22,7 @@ FONT_FILE = "Vera.ttf"
 GIT_SHA_ENV_VAR = "SUDOKU_GEN_GIT_SHA"
 _DEPENDENCIES = ("reportlab", "pypdf")
 _GIT_TIMEOUT_SECONDS = 5
+_GIT_SHA = re.compile(r"^[0-9a-f]{40}$")
 
 
 @dataclass(frozen=True, slots=True)
@@ -73,10 +75,14 @@ def _git(root: Path, *args: str) -> str | None:
 
 
 def _git_state() -> tuple[str | None, bool | None]:
-    """Commit SHA and dirty flag; the env var wins and leaves dirty unknown."""
-    from_env = os.environ.get(GIT_SHA_ENV_VAR)
-    if from_env:
-        return from_env.strip(), None
+    """Commit SHA and dirty flag.
+
+    A valid 40-hex ``SUDOKU_GEN_GIT_SHA`` wins and leaves the dirty flag unknown;
+    an invalid value is ignored.
+    """
+    from_env = os.environ.get(GIT_SHA_ENV_VAR, "").strip().lower()
+    if _GIT_SHA.match(from_env):
+        return from_env, None
     root = Path(__file__).resolve().parents[3]
     if not (root / ".git").exists():
         return None, None
